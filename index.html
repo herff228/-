@@ -4,20 +4,22 @@
     <meta charset="UTF-8">
     <title>VR Игра: Сбор объектов</title>
     <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
-    <script src="https://unpkg.com/aframe-randomizer-components@^3.0.1/dist/aframe-randomizer-components.min.js"></script>
+    <script src="https://unpkg.com/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
 </head>
 <body>
-    <a-scene physics="debug: false; gravity: -9.8;">
+    <a-scene physics="gravity: -9.8;">
         <!-- Ассеты (ресурсы) -->
         <a-assets>
-            <!-- Звуки -->
+            <!-- Заглушки для звуков (используем встроенные URL A-Frame) -->
             <audio id="collect-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/click.ogg"></audio>
             <audio id="game-over-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/percussion.ogg"></audio>
+            
+            <!-- Градиентный небосклон вместо текстуры -->
+            <canvas id="skyCanvas" width="2048" height="1024"></canvas>
         </a-assets>
         
-        <!-- Скайбокс -->
-        <a-sky src="https://cdn.aframe.io/360-image-gallery-boilerplate/img/city.jpg" radius="100"></a-sky>
+        <!-- Динамически созданный скайбокс -->
+        <a-sky id="dynamic-sky" radius="100"></a-sky>
         
         <!-- Пол с физикой -->
         <a-plane 
@@ -29,7 +31,6 @@
             height="50" 
             color="#4a752c"
             roughness="0.8"
-            repeat="20 20"
         ></a-plane>
         
         <!-- Стены для ограничения территории -->
@@ -41,32 +42,33 @@
         <!-- Игрок -->
         <a-entity id="player" 
                   position="0 3 5"
-                  collision-collect
                   kinematic-body>
             <a-entity camera
                 position="0 1.6 0"
                 look-controls="pointerLockEnabled: true"
                 wasd-controls="acceleration: 80; fly: false"
-                cursor="rayOrigin: mouse"
-                raycaster="objects: .collectible; far: 5;">
+                cursor="rayOrigin: mouse">
                 <a-cursor 
                     id="cursor"
-                    fuse="false"
+                    color="#4CC3D9"
                     animation__click="property: scale; startEvents: click; from: 0.1 0.1 0.1; to: 1 1 1; dur: 150"
                 ></a-cursor>
             </a-entity>
             
-            <!-- Видимый коллайдер для игрока (скрытый) -->
-            <a-entity 
+            <!-- Видимый коллайдер для игрока -->
+            <a-box 
                 id="player-collider"
-                geometry="primitive: box; width: 1; height: 2; depth: 1"
-                material="visible: false"
+                position="0 -0.8 0"
+                width="1"
+                height="2"
+                depth="1"
+                material="visible: false;"
                 static-body
-            ></a-entity>
+            ></a-box>
         </a-entity>
         
         <!-- UI: Счет -->
-        <a-entity position="0 3 -1.5">
+        <a-entity position="0 2.5 -1.5">
             <a-text 
                 id="score-text" 
                 value="Счет: 0" 
@@ -74,12 +76,12 @@
                 color="#FFFFFF" 
                 align="center"
                 scale="2 2 2"
-                font="https://cdn.aframe.io/fonts/Exo2SemiBold.fnt"
+                font="mozillavr"
             ></a-text>
         </a-entity>
         
         <!-- UI: Таймер -->
-        <a-entity position="0 2.5 -1.5">
+        <a-entity position="0 2 -1.5">
             <a-text 
                 id="timer-text" 
                 value="Время: 60" 
@@ -87,20 +89,20 @@
                 color="#FFFFFF" 
                 align="center"
                 scale="1.5 1.5 1.5"
-                font="https://cdn.aframe.io/fonts/Exo2SemiBold.fnt"
+                font="mozillavr"
             ></a-text>
         </a-entity>
         
         <!-- UI: Прогресс -->
-        <a-entity position="0 2 -1.5">
+        <a-entity position="0 1.5 -1.5">
             <a-text 
                 id="progress-text" 
-                value="Объекты: 0/30" 
+                value="Объекты: 0/20" 
                 position="0 0 0" 
                 color="#FFFFFF" 
                 align="center"
                 scale="1.5 1.5 1.5"
-                font="https://cdn.aframe.io/fonts/Exo2SemiBold.fnt"
+                font="mozillavr"
             ></a-text>
         </a-entity>
         
@@ -108,11 +110,11 @@
         <a-entity id="game-messages" position="0 0 -1.5"></a-entity>
         
         <!-- Освещение -->
-        <a-light type="ambient" color="#FFFFFF" intensity="0.7"></a-light>
-        <a-light type="directional" color="#FFFFFF" intensity="0.9" position="-1 3 1" cast-shadow></a-light>
+        <a-light type="ambient" color="#FFFFFF" intensity="0.8"></a-light>
+        <a-light type="directional" color="#FFFFFF" intensity="1" position="-1 3 1"></a-light>
         
-        <!-- Фоновые эффекты -->
-        <a-entity particle-system="preset: snow; color: #FFFFFF; particleCount: 100; maxAge: 5"></a-entity>
+        <!-- Облака-декорации -->
+        <a-entity id="clouds-container"></a-entity>
     </a-scene>
     
     <script>
@@ -122,68 +124,76 @@
         let gameActive = true;
         let timerInterval;
         let collectedObjects = 0;
-        const totalObjects = 30; // Общее количество объектов
+        const totalObjects = 20; // Уменьшено для тестирования
         let objects = []; // Массив для хранения объектов
         
-        // Компонент для обработки столкновений игрока
-        AFRAME.registerComponent('collision-collect', {
-            init: function() {
-                // Ждем загрузки физики
-                setTimeout(() => {
-                    const playerCollider = document.querySelector('#player-collider');
-                    
-                    if (playerCollider && playerCollider.body) {
-                        playerCollider.addEventListener('collide', (e) => {
-                            if (!gameActive) return;
-                            
-                            const other = e.detail.body.el;
-                            
-                            if (other.classList.contains('collectible')) {
-                                this.collectObject(other);
-                            }
-                        });
-                    }
-                }, 1000);
-            },
+        // Создаем градиентный небосклон
+        function createSkyGradient() {
+            const canvas = document.getElementById('skyCanvas');
+            const ctx = canvas.getContext('2d');
             
-            collectObject: function(object) {
-                if (!object.hasAttribute('data-collected')) {
-                    // Помечаем как собранный
-                    object.setAttribute('data-collected', 'true');
+            // Создаем вертикальный градиент (от синего к голубому)
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB'); // Голубой (верх)
+            gradient.addColorStop(0.5, '#4682B4'); // Стальной синий (середина)
+            gradient.addColorStop(1, '#1E90FF'); // Доджер-блюз (низ)
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Добавляем солнце
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            ctx.arc(canvas.width * 0.8, canvas.height * 0.2, 60, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Используем canvas как текстуру
+            const sky = document.getElementById('dynamic-sky');
+            sky.setAttribute('material', {
+                src: '#skyCanvas',
+                transparent: false
+            });
+        }
+        
+        // Создаем облака
+        function createClouds() {
+            const container = document.getElementById('clouds-container');
+            
+            for (let i = 0; i < 10; i++) {
+                const cloud = document.createElement('a-entity');
+                const x = Math.random() * 100 - 50;
+                const z = Math.random() * 100 - 50;
+                const y = 15 + Math.random() * 10;
+                const scale = 3 + Math.random() * 4;
+                
+                cloud.setAttribute('position', `${x} ${y} ${z}`);
+                cloud.setAttribute('scale', `${scale} ${scale/3} ${scale}`);
+                
+                // Создаем группу сфер для облака
+                for (let j = 0; j < 5; j++) {
+                    const sphere = document.createElement('a-sphere');
+                    const offsetX = (Math.random() - 0.5) * 2;
+                    const offsetZ = (Math.random() - 0.5) * 2;
+                    const radius = 0.8 + Math.random() * 0.4;
                     
-                    // Получаем значение объекта
-                    const value = parseInt(object.getAttribute('data-value') || 1);
-                    
-                    // Увеличиваем счет и счетчик
-                    score += value;
-                    collectedObjects++;
-                    
-                    // Обновляем UI
-                    updateScore();
-                    updateProgress();
-                    
-                    // Воспроизводим звук
-                    const sound = document.querySelector('#collect-sound');
-                    if (sound) {
-                        sound.components.sound.playSound();
-                    }
-                    
-                    // Сразу удаляем объект (без анимации)
-                    object.parentNode.removeChild(object);
-                    
-                    // Удаляем из массива
-                    const index = objects.indexOf(object);
-                    if (index > -1) {
-                        objects.splice(index, 1);
-                    }
-                    
-                    // Проверяем победу
-                    if (collectedObjects >= totalObjects) {
-                        endGame(true);
-                    }
+                    sphere.setAttribute('position', `${offsetX} 0 ${offsetZ}`);
+                    sphere.setAttribute('radius', radius);
+                    sphere.setAttribute('material', 'color: #FFFFFF; opacity: 0.9');
+                    cloud.appendChild(sphere);
                 }
+                
+                // Анимация движения облака
+                cloud.setAttribute('animation', {
+                    property: 'position',
+                    to: `${x + (Math.random() - 0.5) * 20} ${y} ${z + (Math.random() - 0.5) * 20}`,
+                    dur: 20000 + Math.random() * 20000,
+                    loop: true,
+                    easing: 'linear'
+                });
+                
+                container.appendChild(cloud);
             }
-        });
+        }
         
         // Функция создания случайных объектов
         function createCollectibles(count) {
@@ -192,16 +202,14 @@
             // Массив цветов
             const colors = ['#FFD700', '#C0C0C0', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
             
-            // Массив типов объектов
-            const types = ['sphere', 'box', 'cylinder', 'cone', 'torus', 'octahedron', 'tetrahedron', 'dodecahedron', 'icosahedron'];
-            
             for (let i = 0; i < count; i++) {
                 // Случайная позиция
                 const x = Math.random() * 40 - 20;
                 const z = Math.random() * 40 - 20;
-                const y = 0.5 + Math.random() * 2;
+                const y = 0.5;
                 
                 // Случайный тип
+                const types = ['sphere', 'box', 'cylinder', 'cone'];
                 const type = types[Math.floor(Math.random() * types.length)];
                 
                 // Случайный цвет
@@ -234,27 +242,6 @@
                         element.setAttribute('radius-bottom', '0.4');
                         element.setAttribute('height', '1');
                         break;
-                    case 'torus':
-                        element = document.createElement('a-torus');
-                        element.setAttribute('radius', '0.4');
-                        element.setAttribute('radius-tubular', '0.1');
-                        break;
-                    case 'octahedron':
-                        element = document.createElement('a-octahedron');
-                        element.setAttribute('radius', '0.5');
-                        break;
-                    case 'tetrahedron':
-                        element = document.createElement('a-tetrahedron');
-                        element.setAttribute('radius', '0.6');
-                        break;
-                    case 'dodecahedron':
-                        element = document.createElement('a-dodecahedron');
-                        element.setAttribute('radius', '0.4');
-                        break;
-                    case 'icosahedron':
-                        element = document.createElement('a-icosahedron');
-                        element.setAttribute('radius', '0.4');
-                        break;
                 }
                 
                 // Общие атрибуты
@@ -264,46 +251,174 @@
                 element.setAttribute('metalness', '0.7');
                 element.setAttribute('roughness', '0.3');
                 element.setAttribute('data-value', value);
-                element.setAttribute('static-body', 'shape: box');
-                element.setAttribute('shadow', 'cast: true; receive: false');
+                element.setAttribute('static-body', '');
+                element.setAttribute('id', `collectible-${i}`);
                 
                 // Анимация вращения
                 element.setAttribute('animation', {
                     property: 'rotation',
-                    to: `0 ${360 + Math.random() * 360} 0`,
+                    to: `0 ${360} 0`,
                     dur: 3000 + Math.random() * 4000,
                     loop: true,
                     easing: 'linear'
                 });
                 
                 // Анимация плавания
-                if (Math.random() > 0.5) {
-                    element.setAttribute('animation__bounce', {
-                        property: 'position',
-                        to: `${x} ${y + 0.5} ${z}`,
-                        dir: 'alternate',
-                        dur: 1500 + Math.random() * 1000,
-                        loop: true,
-                        easing: 'easeInOutSine'
-                    });
-                }
+                element.setAttribute('animation__bounce', {
+                    property: 'position',
+                    to: `${x} ${y + 0.5} ${z}`,
+                    dir: 'alternate',
+                    dur: 1500 + Math.random() * 1000,
+                    loop: true,
+                    easing: 'easeInOutSine'
+                });
                 
                 // Добавляем в сцену и массив
                 scene.appendChild(element);
                 objects.push(element);
             }
+            
+            console.log(`Создано ${objects.length} объектов для сбора`);
+        }
+        
+        // Система обнаружения столкновений
+        function initCollisionDetection() {
+            const playerCollider = document.getElementById('player-collider');
+            
+            // Проверяем столкновения каждые 100мс
+            setInterval(() => {
+                if (!gameActive) return;
+                
+                const playerPos = playerCollider.getAttribute('position');
+                
+                objects.forEach((obj, index) => {
+                    if (!obj.parentNode) {
+                        objects.splice(index, 1);
+                        return;
+                    }
+                    
+                    const objPos = obj.getAttribute('position');
+                    const distance = Math.sqrt(
+                        Math.pow(playerPos.x - objPos.x, 2) +
+                        Math.pow(playerPos.y - objPos.y, 2) +
+                        Math.pow(playerPos.z - objPos.z, 2)
+                    );
+                    
+                    // Если объект близко (расстояние меньше 1.5)
+                    if (distance < 1.5 && !obj.hasAttribute('data-collected')) {
+                        collectObject(obj);
+                    }
+                });
+            }, 100);
+        }
+        
+        // Функция сбора объекта
+        function collectObject(object) {
+            if (!gameActive || object.hasAttribute('data-collected')) return;
+            
+            // Помечаем как собранный
+            object.setAttribute('data-collected', 'true');
+            
+            // Получаем значение объекта
+            const value = parseInt(object.getAttribute('data-value') || 1);
+            
+            // Увеличиваем счет и счетчик
+            score += value;
+            collectedObjects++;
+            
+            // Обновляем UI
+            updateScore();
+            updateProgress();
+            
+            // Воспроизводим звук
+            const sound = document.getElementById('collect-sound');
+            if (sound && sound.components && sound.components.sound) {
+                sound.components.sound.playSound();
+            }
+            
+            // Сразу удаляем объект
+            if (object.parentNode) {
+                object.parentNode.removeChild(object);
+            }
+            
+            // Удаляем из массива
+            const objIndex = objects.indexOf(object);
+            if (objIndex > -1) {
+                objects.splice(objIndex, 1);
+            }
+            
+            // Эффект частиц при сборе
+            createParticleEffect(object.getAttribute('position'), object.getAttribute('color'));
+            
+            console.log(`Собран объект! Осталось: ${objects.length}`);
+            
+            // Проверяем победу
+            if (collectedObjects >= totalObjects) {
+                endGame(true);
+            }
+        }
+        
+        // Создание эффекта частиц при сборе
+        function createParticleEffect(position, color) {
+            const scene = document.querySelector('a-scene');
+            
+            for (let i = 0; i < 10; i++) {
+                const particle = document.createElement('a-sphere');
+                particle.setAttribute('radius', '0.05');
+                particle.setAttribute('color', color);
+                particle.setAttribute('position', position);
+                particle.setAttribute('opacity', '0.8');
+                
+                // Случайное направление
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 0.5 + Math.random() * 0.5;
+                const vx = Math.cos(angle) * speed;
+                const vz = Math.sin(angle) * speed;
+                const vy = 1 + Math.random() * 1;
+                
+                let life = 0;
+                const maxLife = 1000; // 1 секунда
+                
+                const animate = () => {
+                    if (!particle.parentNode) return;
+                    
+                    life += 16; // ~60fps
+                    const progress = life / maxLife;
+                    
+                    const currentPos = particle.getAttribute('position');
+                    const newPos = {
+                        x: currentPos.x + vx * 0.016,
+                        y: currentPos.y + vy * 0.016 - (9.8 * progress * 0.016),
+                        z: currentPos.z + vz * 0.016
+                    };
+                    
+                    particle.setAttribute('position', newPos);
+                    particle.setAttribute('opacity', 0.8 * (1 - progress));
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        if (particle.parentNode) {
+                            particle.parentNode.removeChild(particle);
+                        }
+                    }
+                };
+                
+                scene.appendChild(particle);
+                requestAnimationFrame(animate);
+            }
         }
         
         // Функция обновления счета
         function updateScore() {
-            const scoreText = document.querySelector('#score-text');
+            const scoreText = document.getElementById('score-text');
             scoreText.setAttribute('value', `Счет: ${score}`);
             
             // Анимация обновления
             scoreText.setAttribute('animation', {
                 property: 'scale',
                 from: '2 2 2',
-                to: '2.5 2.5 2.5',
+                to: '2.3 2.3 2.3',
                 dur: 200,
                 easing: 'easeOutQuad',
                 direction: 'alternate'
@@ -316,13 +431,13 @@
         
         // Функция обновления прогресса
         function updateProgress() {
-            const progressText = document.querySelector('#progress-text');
+            const progressText = document.getElementById('progress-text');
             progressText.setAttribute('value', `Объекты: ${collectedObjects}/${totalObjects}`);
         }
         
         // Функция обновления таймера
         function updateTimer() {
-            const timerText = document.querySelector('#timer-text');
+            const timerText = document.getElementById('timer-text');
             
             const minutes = Math.floor(timeLeft / 60);
             const seconds = timeLeft % 60;
@@ -337,8 +452,8 @@
                     timerText.setAttribute('animation', {
                         property: 'opacity',
                         from: '1',
-                        to: '0.3',
-                        dur: 500,
+                        to: '0.5',
+                        dur: 300,
                         loop: true,
                         direction: 'alternate'
                     });
@@ -348,28 +463,23 @@
         
         // Функция завершения игры
         function endGame(isWin) {
+            if (!gameActive) return;
+            
             gameActive = false;
             clearInterval(timerInterval);
             
             // Скрываем курсор
-            const cursor = document.querySelector('#cursor');
+            const cursor = document.getElementById('cursor');
             if (cursor) {
                 cursor.setAttribute('visible', 'false');
             }
-            
-            // Удаляем все оставшиеся объекты
-            objects.forEach(obj => {
-                if (obj.parentNode) {
-                    obj.parentNode.removeChild(obj);
-                }
-            });
             
             // Сообщение о завершении
             const message = isWin 
                 ? "ПОБЕДА! 🎉" 
                 : "ВРЕМЯ ВЫШЛО! ⏰";
             
-            const finalScore = `\nИтоговый счет: ${score}\nСобрано: ${collectedObjects}/${totalObjects}`;
+            const finalScore = `\nСчет: ${score}\nОбъекты: ${collectedObjects}/${totalObjects}`;
             
             // Создаем сообщение
             const gameOverText = document.createElement('a-text');
@@ -377,8 +487,8 @@
             gameOverText.setAttribute('position', '0 1 -2');
             gameOverText.setAttribute('align', 'center');
             gameOverText.setAttribute('color', isWin ? '#FFD700' : '#FF4444');
-            gameOverText.setAttribute('scale', '3 3 3');
-            gameOverText.setAttribute('font', 'https://cdn.aframe.io/fonts/Exo2Bold.fnt');
+            gameOverText.setAttribute('scale', '2.5 2.5 2.5');
+            gameOverText.setAttribute('font', 'mozillavr');
             
             // Кнопка перезапуска
             const restartButton = document.createElement('a-text');
@@ -386,27 +496,9 @@
             restartButton.setAttribute('position', '0 -0.5 -2');
             restartButton.setAttribute('align', 'center');
             restartButton.setAttribute('color', '#00FFFF');
-            restartButton.setAttribute('scale', '2 2 2');
+            restartButton.setAttribute('scale', '1.5 1.5 1.5');
             restartButton.setAttribute('class', 'clickable');
-            restartButton.setAttribute('font', 'https://cdn.aframe.io/fonts/Exo2SemiBold.fnt');
-            
-            // Анимация появления
-            gameOverText.setAttribute('animation', {
-                property: 'scale',
-                from: '0 0 0',
-                to: '3 3 3',
-                dur: 1000,
-                easing: 'easeOutElastic'
-            });
-            
-            restartButton.setAttribute('animation', {
-                property: 'scale',
-                from: '0 0 0',
-                to: '2 2 2',
-                dur: 1000,
-                easing: 'easeOutElastic',
-                delay: 500
-            });
+            restartButton.setAttribute('font', 'mozillavr');
             
             // Обработчик клика
             restartButton.addEventListener('click', function() {
@@ -414,26 +506,35 @@
             });
             
             // Добавляем в сцену
-            const messagesContainer = document.querySelector('#game-messages');
+            const messagesContainer = document.getElementById('game-messages');
+            messagesContainer.innerHTML = '';
             messagesContainer.appendChild(gameOverText);
             messagesContainer.appendChild(restartButton);
             
             // Воспроизводим звук
-            const sound = document.querySelector('#game-over-sound');
-            if (sound) {
+            const sound = document.getElementById('game-over-sound');
+            if (sound && sound.components && sound.components.sound) {
                 sound.components.sound.playSound();
             }
             
-            // Вибрация
-            if (navigator.vibrate) {
-                navigator.vibrate(isWin ? [100, 50, 100] : [500]);
-            }
+            console.log(`Игра окончена! ${isWin ? 'Победа!' : 'Поражение!'}`);
         }
         
         // Инициализация игры
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('Игра загружается...');
+            
+            // Создаем небо
+            createSkyGradient();
+            
+            // Создаем облака
+            createClouds();
+            
             // Создаем объекты
             createCollectibles(totalObjects);
+            
+            // Инициализируем обнаружение столкновений
+            setTimeout(initCollisionDetection, 1000);
             
             // Обновляем UI
             updateScore();
@@ -452,18 +553,17 @@
                 }
             }, 1000);
             
-            // Информация об управлении
-            console.log('Управление:');
-            console.log('- WASD: перемещение');
-            console.log('- Мышка: поворот камеры');
-            console.log('- Наступайте на объекты для сбора');
-            console.log('- Цель: собрать все объекты за 60 секунд!');
+            console.log('Игра запущена! Управление: WASD для движения, мышь для обзора');
         });
         
         // Обработка клавиши R для перезапуска
         document.addEventListener('keydown', function(e) {
             if (e.key === 'r' || e.key === 'R') {
                 location.reload();
+            }
+            if (e.key === 'Escape') {
+                const instructions = document.getElementById('instructions');
+                instructions.style.display = instructions.style.display === 'none' ? 'block' : 'none';
             }
         });
     </script>
@@ -475,11 +575,14 @@
             overflow: hidden;
             font-family: Arial, sans-serif;
             background: #000;
+            width: 100vw;
+            height: 100vh;
         }
         
         a-scene {
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
+            display: block;
         }
         
         .clickable {
@@ -492,73 +595,125 @@
         
         #instructions {
             position: absolute;
-            bottom: 20px;
+            top: 20px;
             left: 50%;
             transform: translateX(-50%);
             color: white;
-            background: rgba(0,0,0,0.7);
-            padding: 15px;
-            border-radius: 10px;
-            font-size: 16px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 15px;
+            font-size: 14px;
             z-index: 1000;
             text-align: center;
-            border: 2px solid #00FFFF;
-            max-width: 500px;
+            border: 2px solid #4CC3D9;
+            max-width: 400px;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
         }
         
         #instructions h3 {
             margin-top: 0;
-            color: #00FFFF;
+            color: #4CC3D9;
+            font-size: 18px;
         }
         
-        .controls {
+        .controls-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 10px;
-            margin-top: 10px;
+            margin: 15px 0;
         }
         
         .control-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+        }
+        
+        .key {
+            background: #333;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #4CC3D9;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 20px;
+            z-index: 9999;
         }
     </style>
     
     <!-- Инструкции -->
     <div id="instructions">
         <h3>🎮 Управление и правила</h3>
-        <div class="controls">
-            <div class="control-item"><strong>WASD:</strong> Перемещение</div>
-            <div class="control-item"><strong>Мышь:</strong> Поворот камеры</div>
-            <div class="control-item"><strong>Наступайте:</strong> Сбор объектов</div>
-            <div class="control-item"><strong>R:</strong> Перезапуск игры</div>
+        <div class="controls-grid">
+            <div class="control-item">
+                <span><strong>Движение:</strong></span>
+                <span class="key">W A S D</span>
+            </div>
+            <div class="control-item">
+                <span><strong>Обзор:</strong></span>
+                <span class="key">Мышь</span>
+            </div>
+            <div class="control-item">
+                <span><strong>Перезапуск:</strong></span>
+                <span class="key">R</span>
+            </div>
+            <div class="control-item">
+                <span><strong>Сбор:</strong></span>
+                <span>Наступите на объект</span>
+            </div>
         </div>
-        <p style="margin-top: 15px; color: #FFD700;">
-            <strong>Цель:</strong> Соберите все 30 объектов за 60 секунд!
+        <p style="color: #FFD700; margin: 10px 0;">
+            <strong>Цель:</strong> Соберите все 20 объектов за 60 секунд!
         </p>
-        <p style="font-size: 12px; opacity: 0.8; margin-top: 10px;">
-            Счёт: золото = 10, серебро = 5-9, бронза = 1-4 очков
+        <p style="font-size: 12px; opacity: 0.8; margin: 10px 0;">
+            Объекты разных цветов дают разное количество очков
+        </p>
+        <p style="font-size: 11px; opacity: 0.6; margin-top: 15px;">
+            Нажмите ESC для скрытия/показа инструкций
         </p>
     </div>
     
+    <div id="loading">Загрузка игры...</div>
+    
     <script>
-        // Показываем инструкции на 10 секунд
+        // Скрываем загрузку и показываем инструкции
         window.addEventListener('load', function() {
-            const instructions = document.querySelector('#instructions');
+            const loading = document.getElementById('loading');
+            const instructions = document.getElementById('instructions');
             
             setTimeout(() => {
-                instructions.style.opacity = '0.5';
+                loading.style.display = 'none';
+                instructions.style.display = 'block';
+            }, 1500);
+            
+            // Автоскрытие инструкций через 8 секунд
+            setTimeout(() => {
+                instructions.style.opacity = '0.7';
                 instructions.style.transition = 'opacity 1s';
-            }, 8000);
-            
-            setTimeout(() => {
-                instructions.style.display = 'none';
-            }, 10000);
+            }, 6000);
             
             // Скрытие по клику
             instructions.addEventListener('click', function() {
                 instructions.style.display = 'none';
+            });
+            
+            // Показать/скрыть по ESC
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    instructions.style.display = instructions.style.display === 'none' ? 'block' : 'none';
+                    instructions.style.opacity = '1';
+                }
             });
         });
     </script>
