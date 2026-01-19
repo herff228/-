@@ -5,21 +5,19 @@
     <title>VR Игра: Сбор объектов</title>
     <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
+    <script src="https://unpkg.com/aframe-randomizer-components@^3.0.1/dist/aframe-randomizer-components.min.js"></script>
 </head>
 <body>
-    <a-scene physics="debug: false">
+    <a-scene physics="debug: false; gravity: -9.8;">
         <!-- Ассеты (ресурсы) -->
         <a-assets>
-            <!-- 3D модель дерева -->
-            <a-asset-item id="tree-model" src="https://cdn.aframe.io/aframe/examples/models/gltf/tree/tree.gltf"></a-asset-item>
-            
-            <!-- Звуки (опционально) -->
+            <!-- Звуки -->
             <audio id="collect-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/click.ogg"></audio>
             <audio id="game-over-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/percussion.ogg"></audio>
         </a-assets>
         
         <!-- Скайбокс -->
-        <a-sky src="sky.jpg" radius="100"></a-sky>
+        <a-sky src="https://cdn.aframe.io/360-image-gallery-boilerplate/img/city.jpg" radius="100"></a-sky>
         
         <!-- Пол с физикой -->
         <a-plane 
@@ -27,90 +25,45 @@
             static-body
             position="0 0 0" 
             rotation="-90 0 0" 
-            width="30" 
-            height="30" 
+            width="50" 
+            height="50" 
             color="#4a752c"
             roughness="0.8"
-            repeat="10 10"
+            repeat="20 20"
         ></a-plane>
         
+        <!-- Стены для ограничения территории -->
+        <a-box static-body position="0 2.5 -25" width="50" height="5" depth="0.5" color="#8B4513"></a-box>
+        <a-box static-body position="0 2.5 25" width="50" height="5" depth="0.5" color="#8B4513"></a-box>
+        <a-box static-body position="-25 2.5 0" width="0.5" height="5" depth="50" color="#8B4513"></a-box>
+        <a-box static-body position="25 2.5 0" width="0.5" height="5" depth="50" color="#8B4513"></a-box>
+        
         <!-- Игрок -->
-        <a-entity id="player" position="0 1.6 5">
-            <a-camera 
-                id="camera"
-                look-controls="pointerLockEnabled: true"
-                wasd-controls="acceleration: 65; fly: true"
+        <a-entity id="player" 
+                  position="0 3 5"
+                  collision-collect
+                  kinematic-body>
+            <a-entity camera
                 position="0 1.6 0"
-            >
+                look-controls="pointerLockEnabled: true"
+                wasd-controls="acceleration: 80; fly: false"
+                cursor="rayOrigin: mouse"
+                raycaster="objects: .collectible; far: 5;">
                 <a-cursor 
                     id="cursor"
-                    fuse="true"
-                    fuse-timeout="100"
+                    fuse="false"
                     animation__click="property: scale; startEvents: click; from: 0.1 0.1 0.1; to: 1 1 1; dur: 150"
                 ></a-cursor>
-            </a-camera>
+            </a-entity>
+            
+            <!-- Видимый коллайдер для игрока (скрытый) -->
+            <a-entity 
+                id="player-collider"
+                geometry="primitive: box; width: 1; height: 2; depth: 1"
+                material="visible: false"
+                static-body
+            ></a-entity>
         </a-entity>
-        
-        <!-- Объекты для сбора -->
-        <!-- Золотые монеты -->
-        <a-entity 
-            class="collectible"
-            gltf-model="#tree-model"
-            position="-6 2 -4"
-            scale="0.5 0.5 0.5"
-            animation="property: rotation; to: 0 360 0; loop: true; dur: 4000"
-            dynamic-body="shape: box; mass: 0"
-            data-value="10"
-        ></a-entity>
-        
-        <a-sphere 
-            class="collectible"
-            position="5 1.5 -8" 
-            radius="0.5" 
-            color="#FFD700"
-            metalness="0.9"
-            roughness="0.1"
-            animation="property: position; dir: alternate; dur: 2000; easing: easeInOutSine; loop: true; to: 5 2.5 -8"
-            dynamic-body="shape: sphere; mass: 0"
-            data-value="5"
-        ></a-sphere>
-        
-        <a-box 
-            class="collectible"
-            position="8 1 -2" 
-            width="0.8" 
-            height="0.8" 
-            depth="0.8" 
-            color="#C0C0C0"
-            metalness="0.8"
-            animation="property: rotation; to: 360 360 360; loop: true; dur: 5000"
-            dynamic-body="shape: box; mass: 0"
-            data-value="3"
-        ></a-box>
-        
-        <a-cylinder 
-            class="collectible"
-            position="-8 1 -6" 
-            radius="0.4" 
-            height="1" 
-            color="#FF6B6B"
-            animation="property: rotation; to: 0 360 0; loop: true; dur: 3000"
-            dynamic-body="shape: cylinder; mass: 0"
-            data-value="2"
-        ></a-cylinder>
-        
-        <a-cone 
-            class="collectible"
-            position="0 1 -12" 
-            radius-bottom="0.5" 
-            height="1" 
-            color="#4ECDC4"
-            animation="property: position.y; dir: alternate; dur: 1500; easing: easeInOutSine; loop: true; to: 2"
-            dynamic-body="shape: cone; mass: 0"
-            data-value="7"
-        ></a-cone>
-        
-    
         
         <!-- UI: Счет -->
         <a-entity position="0 3 -1.5">
@@ -138,39 +91,59 @@
             ></a-text>
         </a-entity>
         
+        <!-- UI: Прогресс -->
+        <a-entity position="0 2 -1.5">
+            <a-text 
+                id="progress-text" 
+                value="Объекты: 0/30" 
+                position="0 0 0" 
+                color="#FFFFFF" 
+                align="center"
+                scale="1.5 1.5 1.5"
+                font="https://cdn.aframe.io/fonts/Exo2SemiBold.fnt"
+            ></a-text>
+        </a-entity>
+        
         <!-- UI: Сообщения -->
         <a-entity id="game-messages" position="0 0 -1.5"></a-entity>
         
         <!-- Освещение -->
-        <a-light type="ambient" color="#FFFFFF" intensity="0.6"></a-light>
-        <a-light type="directional" color="#FFFFFF" intensity="0.8" position="-1 2 1"></a-light>
-        <a-light type="point" color="#FFD700" intensity="1" distance="8" position="5 3 -8"></a-light>
+        <a-light type="ambient" color="#FFFFFF" intensity="0.7"></a-light>
+        <a-light type="directional" color="#FFFFFF" intensity="0.9" position="-1 3 1" cast-shadow></a-light>
         
         <!-- Фоновые эффекты -->
-        <a-entity particle-system="preset: snow; color: #FFFFFF; particleCount: 200"></a-entity>
+        <a-entity particle-system="preset: snow; color: #FFFFFF; particleCount: 100; maxAge: 5"></a-entity>
     </a-scene>
     
     <script>
         // Инициализация переменных игры
         let score = 0;
-        let timeLeft = 60; // 60 секунд на игру
+        let timeLeft = 60;
         let gameActive = true;
         let timerInterval;
         let collectedObjects = 0;
-        let totalObjects = document.querySelectorAll('.collectible').length;
+        const totalObjects = 30; // Общее количество объектов
+        let objects = []; // Массив для хранения объектов
         
-        // Компонент для обработки столкновений
+        // Компонент для обработки столкновений игрока
         AFRAME.registerComponent('collision-collect', {
             init: function() {
-                this.el.addEventListener('collide', (e) => {
-                    if (!gameActive) return;
+                // Ждем загрузки физики
+                setTimeout(() => {
+                    const playerCollider = document.querySelector('#player-collider');
                     
-                    const other = e.detail.body.el;
-                    
-                    if (other.classList.contains('collectible')) {
-                        this.collectObject(other);
+                    if (playerCollider && playerCollider.body) {
+                        playerCollider.addEventListener('collide', (e) => {
+                            if (!gameActive) return;
+                            
+                            const other = e.detail.body.el;
+                            
+                            if (other.classList.contains('collectible')) {
+                                this.collectObject(other);
+                            }
+                        });
                     }
-                });
+                }, 1000);
             },
             
             collectObject: function(object) {
@@ -181,20 +154,13 @@
                     // Получаем значение объекта
                     const value = parseInt(object.getAttribute('data-value') || 1);
                     
-                    // Увеличиваем счет
+                    // Увеличиваем счет и счетчик
                     score += value;
                     collectedObjects++;
                     
                     // Обновляем UI
                     updateScore();
-                    
-                    // Эффект сбора
-                    object.setAttribute('animation', {
-                        property: 'scale',
-                        to: '0 0 0',
-                        dur: 300,
-                        easing: 'easeOutQuad'
-                    });
+                    updateProgress();
                     
                     // Воспроизводим звук
                     const sound = document.querySelector('#collect-sound');
@@ -202,71 +168,138 @@
                         sound.components.sound.playSound();
                     }
                     
-                    // Удаляем объект после анимации
-                    setTimeout(() => {
-                        object.parentNode.removeChild(object);
-                        
-                        // Проверяем победу
-                        if (collectedObjects >= totalObjects) {
-                            endGame(true);
-                        }
-                    }, 300);
+                    // Сразу удаляем объект (без анимации)
+                    object.parentNode.removeChild(object);
+                    
+                    // Удаляем из массива
+                    const index = objects.indexOf(object);
+                    if (index > -1) {
+                        objects.splice(index, 1);
+                    }
+                    
+                    // Проверяем победу
+                    if (collectedObjects >= totalObjects) {
+                        endGame(true);
+                    }
                 }
             }
         });
         
-        // Компонент для кликов (альтернативный способ сбора)
-        AFRAME.registerComponent('click-collect', {
-            init: function() {
-                this.el.addEventListener('click', () => {
-                    if (!gameActive) return;
-                    
-                    if (this.el.classList.contains('collectible') && !this.el.hasAttribute('data-collected')) {
-                        const value = parseInt(this.el.getAttribute('data-value') || 1);
-                        
-                        // Увеличиваем счет
-                        score += value;
-                        collectedObjects++;
-                        
-                        // Обновляем UI
-                        updateScore();
-                        
-                        // Эффект сбора
-                        this.el.setAttribute('animation', {
-                            property: 'scale',
-                            to: '0 0 0',
-                            dur: 300,
-                            easing: 'easeOutQuad'
-                        });
-                        
-                        // Воспроизводим звук
-                        const sound = document.querySelector('#collect-sound');
-                        if (sound) {
-                            sound.components.sound.playSound();
-                        }
-                        
-                        // Удаляем объект после анимации
-                        setTimeout(() => {
-                            this.el.parentNode.removeChild(this.el);
-                            
-                            // Проверяем победу
-                            if (collectedObjects >= totalObjects) {
-                                endGame(true);
-                            }
-                        }, 300);
-                        
-                        this.el.setAttribute('data-collected', 'true');
-                    }
+        // Функция создания случайных объектов
+        function createCollectibles(count) {
+            const scene = document.querySelector('a-scene');
+            
+            // Массив цветов
+            const colors = ['#FFD700', '#C0C0C0', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+            
+            // Массив типов объектов
+            const types = ['sphere', 'box', 'cylinder', 'cone', 'torus', 'octahedron', 'tetrahedron', 'dodecahedron', 'icosahedron'];
+            
+            for (let i = 0; i < count; i++) {
+                // Случайная позиция
+                const x = Math.random() * 40 - 20;
+                const z = Math.random() * 40 - 20;
+                const y = 0.5 + Math.random() * 2;
+                
+                // Случайный тип
+                const type = types[Math.floor(Math.random() * types.length)];
+                
+                // Случайный цвет
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                
+                // Случайное значение
+                const value = Math.floor(Math.random() * 10) + 1;
+                
+                // Создаем элемент
+                let element;
+                
+                switch(type) {
+                    case 'sphere':
+                        element = document.createElement('a-sphere');
+                        element.setAttribute('radius', '0.4');
+                        break;
+                    case 'box':
+                        element = document.createElement('a-box');
+                        element.setAttribute('width', '0.8');
+                        element.setAttribute('height', '0.8');
+                        element.setAttribute('depth', '0.8');
+                        break;
+                    case 'cylinder':
+                        element = document.createElement('a-cylinder');
+                        element.setAttribute('radius', '0.3');
+                        element.setAttribute('height', '0.8');
+                        break;
+                    case 'cone':
+                        element = document.createElement('a-cone');
+                        element.setAttribute('radius-bottom', '0.4');
+                        element.setAttribute('height', '1');
+                        break;
+                    case 'torus':
+                        element = document.createElement('a-torus');
+                        element.setAttribute('radius', '0.4');
+                        element.setAttribute('radius-tubular', '0.1');
+                        break;
+                    case 'octahedron':
+                        element = document.createElement('a-octahedron');
+                        element.setAttribute('radius', '0.5');
+                        break;
+                    case 'tetrahedron':
+                        element = document.createElement('a-tetrahedron');
+                        element.setAttribute('radius', '0.6');
+                        break;
+                    case 'dodecahedron':
+                        element = document.createElement('a-dodecahedron');
+                        element.setAttribute('radius', '0.4');
+                        break;
+                    case 'icosahedron':
+                        element = document.createElement('a-icosahedron');
+                        element.setAttribute('radius', '0.4');
+                        break;
+                }
+                
+                // Общие атрибуты
+                element.setAttribute('class', 'collectible');
+                element.setAttribute('position', `${x} ${y} ${z}`);
+                element.setAttribute('color', color);
+                element.setAttribute('metalness', '0.7');
+                element.setAttribute('roughness', '0.3');
+                element.setAttribute('data-value', value);
+                element.setAttribute('static-body', 'shape: box');
+                element.setAttribute('shadow', 'cast: true; receive: false');
+                
+                // Анимация вращения
+                element.setAttribute('animation', {
+                    property: 'rotation',
+                    to: `0 ${360 + Math.random() * 360} 0`,
+                    dur: 3000 + Math.random() * 4000,
+                    loop: true,
+                    easing: 'linear'
                 });
+                
+                // Анимация плавания
+                if (Math.random() > 0.5) {
+                    element.setAttribute('animation__bounce', {
+                        property: 'position',
+                        to: `${x} ${y + 0.5} ${z}`,
+                        dir: 'alternate',
+                        dur: 1500 + Math.random() * 1000,
+                        loop: true,
+                        easing: 'easeInOutSine'
+                    });
+                }
+                
+                // Добавляем в сцену и массив
+                scene.appendChild(element);
+                objects.push(element);
             }
-        });
+        }
         
         // Функция обновления счета
         function updateScore() {
             const scoreText = document.querySelector('#score-text');
             scoreText.setAttribute('value', `Счет: ${score}`);
             
-            // Анимация обновления счета
+            // Анимация обновления
             scoreText.setAttribute('animation', {
                 property: 'scale',
                 from: '2 2 2',
@@ -281,22 +314,25 @@
             }, 200);
         }
         
+        // Функция обновления прогресса
+        function updateProgress() {
+            const progressText = document.querySelector('#progress-text');
+            progressText.setAttribute('value', `Объекты: ${collectedObjects}/${totalObjects}`);
+        }
+        
         // Функция обновления таймера
         function updateTimer() {
             const timerText = document.querySelector('#timer-text');
             
-            // Форматирование времени
             const minutes = Math.floor(timeLeft / 60);
             const seconds = timeLeft % 60;
             const timeString = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
             
             timerText.setAttribute('value', `Время: ${timeString}`);
             
-            // Изменение цвета при малом времени
             if (timeLeft <= 10) {
                 timerText.setAttribute('color', '#FF4444');
                 
-                // Мигание
                 if (timeLeft <= 5) {
                     timerText.setAttribute('animation', {
                         property: 'opacity',
@@ -315,23 +351,25 @@
             gameActive = false;
             clearInterval(timerInterval);
             
-            // Останавливаем все анимации
-            document.querySelectorAll('.collectible').forEach(obj => {
-                obj.removeAttribute('animation');
-            });
-            
             // Скрываем курсор
             const cursor = document.querySelector('#cursor');
             if (cursor) {
                 cursor.setAttribute('visible', 'false');
             }
             
+            // Удаляем все оставшиеся объекты
+            objects.forEach(obj => {
+                if (obj.parentNode) {
+                    obj.parentNode.removeChild(obj);
+                }
+            });
+            
             // Сообщение о завершении
             const message = isWin 
-                ? "win!" 
-                : "lost!";
+                ? "ПОБЕДА! 🎉" 
+                : "ВРЕМЯ ВЫШЛО! ⏰";
             
-            const finalScore = `\nИтоговый счет: ${score} очков\nСобрано объектов: ${collectedObjects}/${totalObjects}`;
+            const finalScore = `\nИтоговый счет: ${score}\nСобрано: ${collectedObjects}/${totalObjects}`;
             
             // Создаем сообщение
             const gameOverText = document.createElement('a-text');
@@ -380,13 +418,13 @@
             messagesContainer.appendChild(gameOverText);
             messagesContainer.appendChild(restartButton);
             
-            // Воспроизводим звук завершения
+            // Воспроизводим звук
             const sound = document.querySelector('#game-over-sound');
             if (sound) {
                 sound.components.sound.playSound();
             }
             
-            // Вибрация (если поддерживается)
+            // Вибрация
             if (navigator.vibrate) {
                 navigator.vibrate(isWin ? [100, 50, 100] : [500]);
             }
@@ -394,18 +432,13 @@
         
         // Инициализация игры
         document.addEventListener('DOMContentLoaded', function() {
-            // Добавляем компоненты столкновений игроку
-            const player = document.querySelector('#player');
-            player.setAttribute('collision-collect', '');
+            // Создаем объекты
+            createCollectibles(totalObjects);
             
-            // Добавляем компоненты кликов объектам
-            document.querySelectorAll('.collectible').forEach(obj => {
-                obj.setAttribute('click-collect', '');
-            });
-            
-            // Обновляем отображение счета и таймера
+            // Обновляем UI
             updateScore();
             updateTimer();
+            updateProgress();
             
             // Запускаем таймер
             timerInterval = setInterval(() => {
@@ -423,26 +456,14 @@
             console.log('Управление:');
             console.log('- WASD: перемещение');
             console.log('- Мышка: поворот камеры');
-            console.log('- Клик: сбор объектов');
+            console.log('- Наступайте на объекты для сбора');
             console.log('- Цель: собрать все объекты за 60 секунд!');
         });
         
-        // Обработка ошибок загрузки модели
-        window.addEventListener('model-error', function(e) {
-            console.warn('Не удалось загрузить 3D модель:', e.detail.src);
-            
-            // Заменяем модель на простую геометрию
-            const model = e.target;
-            if (model.id === 'tree-model') {
-                model.parentNode.innerHTML = `
-                    <a-cone 
-                        position="0 0 0" 
-                        radius-bottom="0.5" 
-                        height="2" 
-                        color="#228B22"
-                        rotation="0 45 0"
-                    ></a-cone>
-                `;
+        // Обработка клавиши R для перезапуска
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'r' || e.key === 'R') {
+                location.reload();
             }
         });
     </script>
@@ -453,6 +474,7 @@
             padding: 0;
             overflow: hidden;
             font-family: Arial, sans-serif;
+            background: #000;
         }
         
         a-scene {
@@ -468,45 +490,77 @@
             opacity: 0.8;
         }
         
-        /* Инструкция для десктопа */
-        @media (min-width: 768px) {
-            #instructions {
-                position: absolute;
-                bottom: 20px;
-                left: 20px;
-                color: white;
-                background: rgba(0,0,0,0.5);
-                padding: 10px;
-                border-radius: 5px;
-                font-size: 14px;
-                z-index: 1000;
-            }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 16px;
+            z-index: 1000;
+            text-align: center;
+            border: 2px solid #00FFFF;
+            max-width: 500px;
+        }
+        
+        #instructions h3 {
+            margin-top: 0;
+            color: #00FFFF;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .control-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
     </style>
     
     <!-- Инструкции -->
-    <div id="instructions" style="display: none;">
-        <p>🎮 <strong>Управление:</strong></p>
-        <p>WASD - Перемещение</p>
-        <p>Мышь - Поворот камеры</p>
-        <p>Клик - Сбор объектов</p>
-        <p>Цель: Собрать все объекты за 60 секунд!</p>
+    <div id="instructions">
+        <h3>🎮 Управление и правила</h3>
+        <div class="controls">
+            <div class="control-item"><strong>WASD:</strong> Перемещение</div>
+            <div class="control-item"><strong>Мышь:</strong> Поворот камеры</div>
+            <div class="control-item"><strong>Наступайте:</strong> Сбор объектов</div>
+            <div class="control-item"><strong>R:</strong> Перезапуск игры</div>
+        </div>
+        <p style="margin-top: 15px; color: #FFD700;">
+            <strong>Цель:</strong> Соберите все 30 объектов за 60 секунд!
+        </p>
+        <p style="font-size: 12px; opacity: 0.8; margin-top: 10px;">
+            Счёт: золото = 10, серебро = 5-9, бронза = 1-4 очков
+        </p>
     </div>
     
     <script>
-        // Показываем инструкции на 5 секунд
+        // Показываем инструкции на 10 секунд
         window.addEventListener('load', function() {
             const instructions = document.querySelector('#instructions');
-            instructions.style.display = 'block';
+            
+            setTimeout(() => {
+                instructions.style.opacity = '0.5';
+                instructions.style.transition = 'opacity 1s';
+            }, 8000);
             
             setTimeout(() => {
                 instructions.style.display = 'none';
-            }, 5000);
+            }, 10000);
+            
+            // Скрытие по клику
+            instructions.addEventListener('click', function() {
+                instructions.style.display = 'none';
+            });
         });
     </script>
 </body>
 </html>
-
-
-
-
