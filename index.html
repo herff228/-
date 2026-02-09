@@ -14,8 +14,8 @@
             <audio id="collect-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/click.ogg"></audio>
             <audio id="game-over-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/percussion.ogg"></audio>
             
-            <!-- Текстура скайбокса (природная) -->
-            <img id="sky-texture" src="https://cdn.aframe.io/360-image-gallery-boilerplate/img/city.jpg" crossorigin="anonymous">
+            <!-- Текстура скайбокса -->
+            <img id="sky-texture" src="sky.jpg" crossorigin="anonymous">
         </a-assets>
         
         <!-- Скайбокс -->
@@ -41,15 +41,24 @@
         <a-box static-body position="-25 2.5 0" width="0.5" height="5" depth="50" color="#8B4513"></a-box>
         <a-box static-body position="25 2.5 0" width="0.5" height="5" depth="50" color="#8B4513"></a-box>
         
-        <!-- Игрок с увеличенным хитбоксом -->
+        <!-- Игрок -->
         <a-entity id="player" 
                   position="0 3 5"
-                  kinematic-body="radius: 0.8; height: 3">
+                  kinematic-body="radius: 1.2; height: 1.8">
+            <!-- Основной хитбокс для физики -->
+            <a-entity id="player-hitbox"
+                      position="0 0.9 0"
+                      geometry="primitive: cylinder; radius: 1.2; height: 1.8"
+                      material="visible: false; transparent: true; opacity: 0"
+                      static-body="shape: cylinder; mass: 0"
+                      collision-filter="group: player">
+            </a-entity>
+            
+            <!-- Камера (прикреплена к хитбоксу) -->
             <a-entity camera
-                position="0 1.6 0"
-                look-controls="pointerLockEnabled: true"
-                wasd-controls="acceleration: 100; fly: false; easing: 20"
-                cursor="rayOrigin: mouse">
+                      position="0 1.6 0"
+                      look-controls="pointerLockEnabled: true"
+                      cursor="rayOrigin: mouse">
                 <a-cursor 
                     id="cursor"
                     color="#FF0000"
@@ -57,19 +66,24 @@
                 ></a-cursor>
             </a-entity>
             
-            <!-- Визуальный хитбокс для отладки (можно скрыть) -->
+            <!-- Управление движением (привязано к хитбоксу) -->
+            <a-entity wasd-controls="acceleration: 80; fly: false; easing: 15"
+                      position="0 0 0">
+            </a-entity>
+            
+            <!-- Визуальный хитбокс для отладки -->
             <a-cylinder 
-                id="player-hitbox"
-                position="0 -1 0"
-                radius="0.8"
-                height="3"
-                material="color: #FF0000; opacity: 0.3; transparent: true; visible: false"
-                static-body="shape: cylinder; mass: 0"
+                id="visual-hitbox"
+                position="0 0.9 0"
+                radius="1.2"
+                height="1.8"
+                material="color: #FF0000; opacity: 0.2; transparent: true; visible: false"
+                segments-radial="16"
             ></a-cylinder>
             
             <!-- Визуальное представление игрока (ноги) -->
-            <a-box position="-0.2 -1.5 0" width="0.3" height="0.3" depth="0.3" color="#333333"></a-box>
-            <a-box position="0.2 -1.5 0" width="0.3" height="0.3" depth="0.3" color="#333333"></a-box>
+            <a-box position="-0.3 0 0.2" width="0.3" height="0.6" depth="0.3" color="#333333" shadow></a-box>
+            <a-box position="0.3 0 0.2" width="0.3" height="0.6" depth="0.3" color="#333333" shadow></a-box>
         </a-entity>
         
         <!-- UI: Счет -->
@@ -144,92 +158,6 @@
         let objects = [];
         let collisionCount = 0;
 
-        // Компонент для увеличенного хитбокса игрока
-        AFRAME.registerComponent('player-collider', {
-            init: function() {
-                this.collisions = [];
-                this.lastCollisionCheck = 0;
-                
-                // Получаем хитбокс игрока
-                this.hitbox = document.getElementById('player-hitbox');
-                
-                // Ждем инициализации физики
-                setTimeout(() => {
-                    if (this.hitbox && this.hitbox.body) {
-                        console.log('Хитбокс игрока готов!');
-                        
-                        // Обработчик столкновений
-                        this.hitbox.addEventListener('collide', (e) => {
-                            if (!gameActive) return;
-                            
-                            const other = e.detail.body.el;
-                            
-                            if (other.classList.contains('collectible')) {
-                                collisionCount++;
-                                document.getElementById('debug-text').setAttribute('value', `Столкн.: ${collisionCount}`);
-                                
-                                // Собираем объект при столкновении
-                                this.collectObject(other);
-                            }
-                        });
-                    }
-                }, 2000);
-            },
-            
-            collectObject: function(object) {
-                if (!object.hasAttribute('data-collected')) {
-                    console.log('Объект собран!', object.id);
-                    
-                    // Помечаем как собранный
-                    object.setAttribute('data-collected', 'true');
-                    
-                    // Получаем значение объекта
-                    const value = parseInt(object.getAttribute('data-value') || 1);
-                    
-                    // Увеличиваем счет
-                    score += value;
-                    collectedObjects++;
-                    
-                    // Обновляем UI
-                    updateScore();
-                    updateProgress();
-                    
-                    // Воспроизводим звук
-                    const sound = document.getElementById('collect-sound');
-                    if (sound) {
-                        sound.components.sound.playSound();
-                    }
-                    
-                    // Эффект сбора (уменьшение и удаление)
-                    object.setAttribute('animation', {
-                        property: 'scale',
-                        from: '1 1 1',
-                        to: '0 0 0',
-                        dur: 300,
-                        easing: 'easeOutCubic'
-                    });
-                    
-                    // Удаляем объект через 300мс
-                    setTimeout(() => {
-                        if (object.parentNode) {
-                            object.parentNode.removeChild(object);
-                            
-                            // Удаляем из массива
-                            const index = objects.indexOf(object);
-                            if (index > -1) {
-                                objects.splice(index, 1);
-                            }
-                            
-                            // Проверяем победу
-                            if (collectedObjects >= totalObjects) {
-                                endGame(true);
-                            }
-                        }
-                    }, 300);
-                }
-            }
-        });
-
         // Функция создания случайных объектов
         function createCollectibles(count) {
             const scene = document.querySelector('a-scene');
@@ -282,6 +210,7 @@
                 element.setAttribute('position', `${x} ${y} ${z}`);
                 element.setAttribute('data-value', colorData.value);
                 element.setAttribute('static-body', 'shape: box; mass: 0');
+                element.setAttribute('collision-filter', 'group: collectible');
                 
                 // Добавляем геометрию
                 const geometry = document.createElement(`a-${shape.type}`);
@@ -298,7 +227,7 @@
                 element.appendChild(geometry);
                 
                 // Анимация вращения
-                element.setAttribute('animation', {
+                element.setAttribute('animation__rotate', {
                     property: 'rotation',
                     to: `0 ${360 + Math.random() * 360} 0`,
                     dur: 4000 + Math.random() * 6000,
@@ -328,87 +257,113 @@
                 // Добавляем в сцену
                 scene.appendChild(element);
                 objects.push(element);
-                
-                console.log(`Создан объект ${i}: ${shape.type} (${colorData.name}) на позиции ${x}, ${z}`);
             }
             
-            console.log(`Всего создано ${objects.length} объектов`);
+            console.log(`Создано ${objects.length} объектов для сбора`);
         }
 
-        // Альтернативная система обнаружения столкновений (на всякий случай)
-        function initCollisionDetection() {
-            const player = document.getElementById('player');
-            const hitbox = document.getElementById('player-hitbox');
+        // Система обнаружения столкновений
+        function initCollisionSystem() {
+            const playerHitbox = document.getElementById('player-hitbox');
             
+            // Обработчик физических столкновений
+            playerHitbox.addEventListener('collide', function(e) {
+                if (!gameActive) return;
+                
+                const other = e.detail.body.el;
+                
+                if (other.classList.contains('collectible') && !other.hasAttribute('data-collected')) {
+                    collectObject(other);
+                }
+            });
+            
+            // Дополнительная проверка по расстоянию (на всякий случай)
             setInterval(() => {
                 if (!gameActive) return;
                 
+                const player = document.getElementById('player');
                 const playerPos = player.getAttribute('position');
                 
                 objects.forEach((obj, index) => {
-                    if (!obj.parentNode) {
-                        objects.splice(index, 1);
-                        return;
-                    }
+                    if (!obj.parentNode || obj.hasAttribute('data-collected')) return;
                     
                     const objPos = obj.getAttribute('position');
                     const distance = Math.sqrt(
                         Math.pow(playerPos.x - objPos.x, 2) +
+                        Math.pow(playerPos.y - objPos.y, 2) +
                         Math.pow(playerPos.z - objPos.z, 2)
                     );
                     
-                    // Если объект близко (расстояние меньше 1.2) и примерно на той же высоте
-                    if (distance < 1.2 && !obj.hasAttribute('data-collected')) {
-                        collisionCount++;
-                        document.getElementById('debug-text').setAttribute('value', `Столкн.: ${collisionCount}`);
-                        
-                        // Помечаем как собранный
-                        obj.setAttribute('data-collected', 'true');
-                        
-                        // Получаем значение объекта
-                        const value = parseInt(obj.getAttribute('data-value') || 1);
-                        
-                        // Увеличиваем счет
-                        score += value;
-                        collectedObjects++;
-                        
-                        // Обновляем UI
-                        updateScore();
-                        updateProgress();
-                        
-                        // Звук
-                        const sound = document.getElementById('collect-sound');
-                        if (sound) {
-                            sound.components.sound.playSound();
-                        }
-                        
-                        // Эффект сбора
-                        obj.setAttribute('animation__collect', {
-                            property: 'scale',
-                            from: '1 1 1',
-                            to: '0 0 0',
-                            dur: 300,
-                            easing: 'easeOutCubic'
-                        });
-                        
-                        // Удаляем свет
-                        obj.removeAttribute('light');
-                        
-                        // Удаляем объект
-                        setTimeout(() => {
-                            if (obj.parentNode) {
-                                obj.parentNode.removeChild(obj);
-                                objects.splice(index, 1);
-                                
-                                // Проверяем победу
-                                if (collectedObjects >= totalObjects) {
-                                    endGame(true);
-                                }
-                            }
-                        }, 300);
+                    // Если объект очень близко
+                    if (distance < 1.5) {
+                        collectObject(obj);
                     }
                 });
             }, 100);
+        }
+
+        // Функция сбора объекта
+        function collectObject(object) {
+            if (!gameActive || object.hasAttribute('data-collected')) return;
+            
+            console.log('Объект собран!', object.id);
+            
+            // Помечаем как собранный
+            object.setAttribute('data-collected', 'true');
+            collisionCount++;
+            
+            // Обновляем счетчик столкновений
+            document.getElementById('debug-text').setAttribute('value', `Столкн.: ${collisionCount}`);
+            
+            // Получаем значение объекта
+            const value = parseInt(object.getAttribute('data-value') || 1);
+            
+            // Увеличиваем счет
+            score += value;
+            collectedObjects++;
+            
+            // Обновляем UI
+            updateScore();
+            updateProgress();
+            
+            // Воспроизводим звук
+            const sound = document.getElementById('collect-sound');
+            if (sound) {
+                sound.components.sound.playSound();
+            }
+            
+            // Эффект сбора
+            object.setAttribute('animation__collect', {
+                property: 'scale',
+                from: '1 1 1',
+                to: '0 0 0',
+                dur: 300,
+                easing: 'easeOutCubic'
+            });
+            
+            // Убираем свет
+            object.removeAttribute('light');
+            
+            // Удаляем физическое тело
+            object.removeAttribute('static-body');
+            
+            // Удаляем объект через 300мс
+            setTimeout(() => {
+                if (object.parentNode) {
+                    object.parentNode.removeChild(object);
+                    
+                    // Удаляем из массива
+                    const index = objects.indexOf(object);
+                    if (index > -1) {
+                        objects.splice(index, 1);
+                    }
+                    
+                    // Проверяем победу
+                    if (collectedObjects >= totalObjects) {
+                        endGame(true);
+                    }
+                }
+            }, 300);
         }
 
         // Функция обновления счета
@@ -533,48 +488,47 @@
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Запуск игры...');
             
-            // Добавляем компонент коллизий игроку
-            const player = document.getElementById('player');
-            player.setAttribute('player-collider', '');
-            
-            // Создаем объекты
-            createCollectibles(totalObjects);
-            
-            // Запускаем альтернативную систему обнаружения столкновений
-            setTimeout(initCollisionDetection, 2000);
-            
-            // Обновляем UI
-            updateScore();
-            updateTimer();
-            updateProgress();
-            
-            // Запускаем таймер
-            timerInterval = setInterval(() => {
-                if (!gameActive) return;
+            // Даем время на загрузку физики
+            setTimeout(() => {
+                // Создаем объекты
+                createCollectibles(totalObjects);
                 
-                timeLeft--;
+                // Инициализируем систему столкновений
+                initCollisionSystem();
+                
+                // Обновляем UI
+                updateScore();
                 updateTimer();
+                updateProgress();
                 
-                if (timeLeft <= 0) {
-                    endGame(false);
-                }
-            }, 1000);
-            
-            // Включаем видимость хитбокса при нажатии H (для отладки)
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'h' || e.key === 'H') {
-                    const hitbox = document.getElementById('player-hitbox');
-                    const isVisible = hitbox.getAttribute('material').visible;
-                    hitbox.setAttribute('material', 'visible', !isVisible);
-                    console.log(`Хитбокс ${!isVisible ? 'видим' : 'скрыт'}`);
-                }
-                if (e.key === 'r' || e.key === 'R') {
-                    location.reload();
-                }
-            });
-            
-            console.log('Игра запущена! Двигайтесь к объектам чтобы собрать их.');
-            console.log('Нажмите H для показа/скрытия хитбокса игрока');
+                // Запускаем таймер
+                timerInterval = setInterval(() => {
+                    if (!gameActive) return;
+                    
+                    timeLeft--;
+                    updateTimer();
+                    
+                    if (timeLeft <= 0) {
+                        endGame(false);
+                    }
+                }, 1000);
+                
+                // Включаем видимость хитбокса при нажатии H (для отладки)
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'h' || e.key === 'H') {
+                        const visualHitbox = document.getElementById('visual-hitbox');
+                        const isVisible = visualHitbox.getAttribute('material').visible;
+                        visualHitbox.setAttribute('material', 'visible', !isVisible);
+                        console.log(`Визуальный хитбокс ${!isVisible ? 'видим' : 'скрыт'}`);
+                    }
+                    if (e.key === 'r' || e.key === 'R') {
+                        location.reload();
+                    }
+                });
+                
+                console.log('Игра запущена! Двигайтесь к объектам чтобы собрать их.');
+                console.log('Нажмите H для показа/скрытия визуального хитбокса');
+            }, 2000);
         });
     </script>
     
