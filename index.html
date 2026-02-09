@@ -35,16 +35,16 @@
             repeat="20 20"
         ></a-plane>
         
-        <!-- Игрок с классическим управлением -->
+        <!-- Игрок с простым управлением -->
         <a-entity id="player" 
                   position="0 1.6 5"
                   kinematic-body
-                  wasd-controls="acceleration: 120; fly: false; easing: 20">
+                  wasd-controls="acceleration: 80; fly: false; easing: 15">
             
             <!-- Камера -->
             <a-entity camera
                       position="0 1.6 0"
-                      look-controls="pointerLockEnabled: true; reverseMouseDrag: false"
+                      look-controls="pointerLockEnabled: true"
                       cursor="rayOrigin: mouse">
                 <a-cursor 
                     id="cursor"
@@ -128,126 +128,6 @@
         let collectedObjects = 0;
         const totalObjects = 25;
         let objects = [];
-        let cursorEnabled = true;
-        
-        // Классическое управление как в CS
-        const keys = {
-            w: false, a: false, s: false, d: false,
-            W: false, A: false, S: false, D: false,
-            ' ': false // пробел
-        };
-        
-        let velocity = { x: 0, z: 0 };
-        const acceleration = 0.3;
-        const maxSpeed = 0.25;
-        const friction = 0.9;
-
-        // Компонент для классического FPS управления
-        AFRAME.registerComponent('fps-controls', {
-            init: function() {
-                this.camera = this.el.querySelector('[camera]');
-                this.player = this.el;
-                
-                // Обработчики клавиш
-                document.addEventListener('keydown', (e) => {
-                    const key = e.key;
-                    if (keys.hasOwnProperty(key)) {
-                        keys[key] = true;
-                        e.preventDefault();
-                    }
-                });
-                
-                document.addEventListener('keyup', (e) => {
-                    const key = e.key;
-                    if (keys.hasOwnProperty(key)) {
-                        keys[key] = false;
-                        e.preventDefault();
-                    }
-                });
-                
-                // Захват мыши
-                this.el.addEventListener('click', () => {
-                    if (this.camera.components['look-controls']) {
-                        this.camera.components['look-controls'].pointerLockEnabled = true;
-                        const canvas = this.el.sceneEl.canvas;
-                        if (canvas) {
-                            canvas.requestPointerLock = canvas.requestPointerLock || 
-                                                       canvas.mozRequestPointerLock ||
-                                                       canvas.webkitRequestPointerLock;
-                            canvas.requestPointerLock();
-                        }
-                    }
-                });
-                
-                console.log('Классическое FPS управление включено (как в CS)');
-            },
-            
-            tick: function(time, delta) {
-                if (!gameActive) return;
-                
-                // Получаем вращение камеры
-                const cameraRotation = this.camera.getAttribute('rotation');
-                
-                // Вычисляем направление на основе нажатых клавиш
-                let moveForward = 0;
-                let moveRight = 0;
-                
-                if (keys.w || keys.W) moveForward += 1;
-                if (keys.s || keys.S) moveForward -= 1;
-                if (keys.a || keys.A) moveRight -= 1;
-                if (keys.d || keys.D) moveRight += 1;
-                
-                // Нормализуем вектор направления
-                if (moveForward !== 0 && moveRight !== 0) {
-                    moveForward *= 0.7071; // 1/√2
-                    moveRight *= 0.7071;
-                }
-                
-                // Преобразуем локальное направление в мировые координаты
-                const angle = THREE.MathUtils.degToRad(cameraRotation.y);
-                
-                // Целевая скорость
-                let targetVelocityX = 0;
-                let targetVelocityZ = 0;
-                
-                if (moveForward !== 0 || moveRight !== 0) {
-                    targetVelocityX = (moveForward * Math.sin(angle) + moveRight * Math.cos(angle)) * maxSpeed;
-                    targetVelocityZ = (moveForward * Math.cos(angle) - moveRight * Math.sin(angle)) * maxSpeed;
-                }
-                
-                // Плавное ускорение
-                velocity.x += (targetVelocityX - velocity.x) * acceleration;
-                velocity.z += (targetVelocityZ - velocity.z) * acceleration;
-                
-                // Применяем трение
-                if (Math.abs(moveForward) < 0.1 && Math.abs(moveRight) < 0.1) {
-                    velocity.x *= friction;
-                    velocity.z *= friction;
-                    
-                    // Останавливаем полностью если скорость очень маленькая
-                    if (Math.abs(velocity.x) < 0.001) velocity.x = 0;
-                    if (Math.abs(velocity.z) < 0.001) velocity.z = 0;
-                }
-                
-                // Получаем текущую позицию
-                const currentPos = this.player.getAttribute('position');
-                
-                // Обновляем позицию
-                const newPos = {
-                    x: currentPos.x + velocity.x,
-                    y: currentPos.y,
-                    z: currentPos.z + velocity.z
-                };
-                
-                // Ограничиваем область движения
-                const maxDistance = 45;
-                newPos.x = Math.max(-maxDistance, Math.min(maxDistance, newPos.x));
-                newPos.z = Math.max(-maxDistance, Math.min(maxDistance, newPos.z));
-                
-                // Применяем новую позицию
-                this.player.setAttribute('position', newPos);
-            }
-        });
 
         // Компонент для сбора объектов мышкой
         AFRAME.registerComponent('collect-on-click', {
@@ -262,8 +142,6 @@
                 });
                 
                 this.el.addEventListener('mouseenter', (evt) => {
-                    if (!cursorEnabled) return;
-                    
                     const cursor = document.getElementById('cursor');
                     if (cursor) {
                         cursor.setAttribute('color', '#00FF00');
@@ -272,8 +150,6 @@
                 });
                 
                 this.el.addEventListener('mouseleave', (evt) => {
-                    if (!cursorEnabled) return;
-                    
                     const cursor = document.getElementById('cursor');
                     if (cursor) {
                         cursor.setAttribute('color', '#FF0000');
@@ -579,7 +455,6 @@
             
             gameActive = false;
             clearInterval(timerInterval);
-            cursorEnabled = false;
             
             // Выход из захвата мыши
             if (document.exitPointerLock) {
@@ -646,13 +521,6 @@
             
             // Даем время на загрузку
             setTimeout(() => {
-                // Добавляем компонент классического FPS управления
-                const player = document.getElementById('player');
-                player.setAttribute('fps-controls', '');
-                
-                // Убираем стандартное управление A-Frame
-                player.removeAttribute('wasd-controls');
-                
                 // Создаем объекты
                 createCollectibles(totalObjects);
                 
@@ -711,10 +579,10 @@
                     }
                 });
                 
-                console.log('Игра запущена! Классическое FPS управление как в CS');
-                console.log('Управление: WASD - движение, мышь - обзор и стрельба');
-                console.log('H - хитбокс, R - перезапуск, I - инструкции, ESC - выход из захвата мыши');
-                console.log('Объекты собираются автоматически при приближении или кликом мыши');
+                console.log('Игра запущена! ПРОСТОЕ УПРАВЛЕНИЕ:');
+                console.log('W - вперед, S - назад, A - влево, D - вправо');
+                console.log('Мышь - обзор и клик по объектам');
+                console.log('H - хитбокс, R - перезапуск, I - инструкции');
                 
             }, 2000);
         });
@@ -729,7 +597,6 @@
             background: #000;
             width: 100vw;
             height: 100vh;
-            cursor: none;
         }
         
         a-scene {
@@ -838,7 +705,7 @@
     
     <!-- Инструкции -->
     <div id="instructions">
-        <h3>🏆 СБОР ОБЪЕКТОВ - КЛАССИЧЕСКОЕ УПРАВЛЕНИЕ 🏆</h3>
+        <h3>🏆 СБОР ОБЪЕКТОВ - ПРОСТОЕ УПРАВЛЕНИЕ 🏆</h3>
         <div class="controls-grid">
             <div class="control-item">
                 <span>Вперед:</span>
@@ -874,11 +741,11 @@
             </div>
         </div>
         <p class="tip">
-            <strong>🎯 КЛАССИЧЕСКОЕ FPS УПРАВЛЕНИЕ (КАК В CS):</strong><br>
-            • W/S - движение вперед/назад относительно направления камеры<br>
-            • A/D - стрейф влево/вправо<br>
-            • Мышь - управление поворотом и стрельба<br>
-            • Кликните по экрану для захвата мыши
+            <strong>🎯 ПРОСТОЕ УПРАВЛЕНИЕ:</strong><br>
+            • W - всегда движение вперед (вверх по экрану)<br>
+            • S - всегда движение назад (вниз по экрану)<br>
+            • A/D - влево/вправо<br>
+            • Мышь - управление поворотом камеры
         </p>
         <p class="tip">
             <strong>🎯 ЦЕЛЬ:</strong> Соберите все 25 объектов за 60 секунд!<br>
@@ -922,14 +789,6 @@
                 // Показать/скрыть инструкции по клику
                 instructions.addEventListener('click', function() {
                     this.style.display = 'none';
-                });
-                
-                // Захват мыши при клике на сцену
-                document.querySelector('a-scene').addEventListener('click', function() {
-                    const canvas = this.canvas;
-                    if (canvas && canvas.requestPointerLock) {
-                        canvas.requestPointerLock();
-                    }
                 });
                 
             }, 2000);
