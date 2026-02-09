@@ -13,10 +13,25 @@
             <!-- Звуки -->
             <audio id="collect-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/click.ogg"></audio>
             <audio id="game-over-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/percussion.ogg"></audio>
+            <!-- Добавляем новый звук для сбора объектов -->
+            <audio id="collect-sound-custom" src="https://cdn.aframe.io/basic-guide/audio/coin.wav"></audio>
             
             <!-- Текстура скайбокса -->
-            <img id="sky-texture" src="sky.jpg" crossorigin="anonymous">
+            <img id="sky-texture" src="https://cdn.aframe.io/360-image-gallery-boilerplate/img/sechelt.jpg" crossorigin="anonymous">
         </a-assets>
+        
+        <!-- Система частиц для взрыва -->
+        <a-entity id="explosion" 
+                  particle-system="preset: explosion; color: #FFD700; duration: 500; maxAge: 1"
+                  position="0 0 0"
+                  visible="false">
+        </a-entity>
+        
+        <!-- Звук для сбора объектов -->
+        <a-sound src="#collect-sound-custom" autoplay="false" id="collectSound" position="0 0 0"></a-sound>
+        
+        <!-- Движущиеся объекты (препятствия) -->
+        <a-entity id="moving-objects"></a-entity>
         
         <!-- Скайбокс -->
         <a-sky src="#sky-texture" radius="100"></a-sky>
@@ -117,6 +132,9 @@
         
         <!-- Декоративные деревья -->
         <a-entity id="trees"></a-entity>
+        
+        <!-- Контейнер для собираемых объектов -->
+        <a-entity id="collectibles-container"></a-entity>
     </a-scene>
     
     <script>
@@ -284,9 +302,87 @@
             }
         });
 
-        // Функция создания случайных объектов
+        // Функция для рандомизации позиций объектов
+        function spawnObjects() {
+            const positions = [];
+            for (let i = 0; i < totalObjects; i++) {
+                let x, z;
+                let attempts = 0;
+                
+                do {
+                    x = Math.random() * 80 - 40; // от -40 до 40
+                    z = Math.random() * 80 - 40; // от -40 до 40
+                    attempts++;
+                } while (Math.abs(x) < 5 && Math.abs(z) < 5 && attempts < 100);
+                
+                positions.push({x, y: 0.5, z});
+            }
+            return positions;
+        }
+
+        // Функция создания движущихся объектов (препятствий)
+        function createMovingObjects() {
+            const movingContainer = document.getElementById('moving-objects');
+            movingContainer.innerHTML = '';
+            
+            const movingObjectCount = 5;
+            
+            for (let i = 0; i < movingObjectCount; i++) {
+                // Случайная стартовая позиция
+                const startX = Math.random() * 60 - 30;
+                const startZ = Math.random() * 60 - 30;
+                const endX = Math.random() * 60 - 30;
+                const endZ = Math.random() * 60 - 30;
+                
+                // Создаем движущийся объект
+                const movingObj = document.createElement('a-entity');
+                movingObj.setAttribute('id', `movingObj-${i}`);
+                movingObj.setAttribute('position', `${startX} 2 ${startZ}`);
+                
+                // Добавляем геометрию (конус как в задании)
+                const geometry = document.createElement('a-cone');
+                geometry.setAttribute('radius-bottom', '0.8');
+                geometry.setAttribute('height', '2');
+                geometry.setAttribute('color', '#FF4444');
+                geometry.setAttribute('metalness', '0.7');
+                geometry.setAttribute('roughness', '0.3');
+                geometry.setAttribute('shadow', 'cast: true; receive: false');
+                
+                movingObj.appendChild(geometry);
+                
+                // Добавляем анимацию движения
+                movingObj.setAttribute('animation', {
+                    property: 'position',
+                    to: `${endX} 2 ${endZ}`,
+                    dur: 2000 + Math.random() * 3000,
+                    loop: true,
+                    dir: 'alternate',
+                    easing: 'linear'
+                });
+                
+                // Добавляем вращение
+                movingObj.setAttribute('animation__rotate', {
+                    property: 'rotation',
+                    to: `0 360 0`,
+                    dur: 5000,
+                    loop: true,
+                    easing: 'linear'
+                });
+                
+                // Добавляем физическое тело для столкновений
+                movingObj.setAttribute('static-body', 'shape: box; mass: 0');
+                
+                movingContainer.appendChild(movingObj);
+            }
+            
+            console.log(`Создано ${movingObjectCount} движущихся объектов`);
+        }
+
+        // Функция создания случайных объектов для сбора
         function createCollectibles(count) {
-            const scene = document.querySelector('a-scene');
+            const container = document.getElementById('collectibles-container');
+            container.innerHTML = '';
+            objects = [];
             
             const colors = [
                 {color: '#FFD700', value: 10, name: 'золото'},
@@ -310,18 +406,11 @@
                 {type: 'icosahedron', radius: 0.5}
             ];
             
+            // Генерируем случайные позиции
+            const positions = spawnObjects();
+            
             for (let i = 0; i < count; i++) {
-                // Случайная позиция
-                let x, z;
-                let attempts = 0;
-                
-                do {
-                    x = Math.random() * 80 - 40;
-                    z = Math.random() * 80 - 40;
-                    attempts++;
-                } while (Math.abs(x) < 3 && Math.abs(z) < 3 && attempts < 100);
-                
-                const y = 0.5;
+                const pos = positions[i];
                 
                 // Случайный цвет и значение
                 const colorData = colors[Math.floor(Math.random() * colors.length)];
@@ -333,7 +422,7 @@
                 const element = document.createElement('a-entity');
                 element.setAttribute('class', 'collectible clickable');
                 element.setAttribute('id', `obj-${i}`);
-                element.setAttribute('position', `${x} ${y} ${z}`);
+                element.setAttribute('position', `${pos.x} ${pos.y} ${pos.z}`);
                 element.setAttribute('data-value', colorData.value);
                 element.setAttribute('collect-on-click', '');
                 element.setAttribute('static-body', 'shape: box; mass: 0');
@@ -364,8 +453,8 @@
                 // Анимация парения
                 element.setAttribute('animation__float', {
                     property: 'position',
-                    from: `${x} ${y} ${z}`,
-                    to: `${x} ${y + 0.8} ${z}`,
+                    from: `${pos.x} ${pos.y} ${pos.z}`,
+                    to: `${pos.x} ${pos.y + 0.8} ${pos.z}`,
                     dir: 'alternate',
                     dur: 2000 + Math.random() * 2000,
                     loop: true,
@@ -380,8 +469,8 @@
                     distance: 3
                 });
                 
-                // Добавляем в сцену
-                scene.appendChild(element);
+                // Добавляем в контейнер
+                container.appendChild(element);
                 objects.push(element);
             }
             
@@ -480,10 +569,23 @@
             updateScore();
             updateProgress();
             
-            // Воспроизводим звук
-            const sound = document.getElementById('collect-sound');
-            if (sound && sound.components && sound.components.sound) {
-                sound.components.sound.playSound();
+            // 1. Воспроизводим звук сбора из задания
+            const customSound = document.getElementById('collectSound');
+            if (customSound && customSound.components && customSound.components.sound) {
+                customSound.components.sound.playSound();
+            }
+            
+            // 2. Активируем систему частиц (взрыв) из задания
+            const explosion = document.getElementById('explosion');
+            if (explosion) {
+                const objPos = object.getAttribute('position');
+                explosion.setAttribute('position', objPos);
+                explosion.setAttribute('visible', 'true');
+                
+                // Скрываем частицы через 500мс
+                setTimeout(() => {
+                    explosion.setAttribute('visible', 'false');
+                }, 500);
             }
             
             // Эффект сбора
@@ -587,12 +689,15 @@
                 document.exitPointerLock();
             }
             
-            // Сообщение о завершении
+            // Сообщение о завершении с ФИО студента
+            const studentName = "Иванов Иван Иванович";
+            const studentGroup = "Группа: ПИ-21-1";
+            
             const message = isWin 
                 ? "ПОБЕДА! 🎉" 
                 : "ВРЕМЯ ВЫШЛО! ⏰";
             
-            const finalScore = `\nСчет: ${score}\nОбъекты: ${collectedObjects}/${totalObjects}\nВремя: ${60 - timeLeft} сек`;
+            const finalScore = `\nСчет: ${score}\nОбъекты: ${collectedObjects}/${totalObjects}\nВремя: ${60 - timeLeft} сек\n\n${studentName}\n${studentGroup}`;
             
             const gameOverText = document.createElement('a-text');
             gameOverText.setAttribute('value', message + finalScore);
@@ -604,7 +709,7 @@
             
             const restartButton = document.createElement('a-text');
             restartButton.setAttribute('value', '[ НАЧАТЬ ЗАНОВО ]');
-            restartButton.setAttribute('position', '0 -0.8 -2');
+            restartButton.setAttribute('position', '0 -1.5 -2');
             restartButton.setAttribute('align', 'center');
             restartButton.setAttribute('color', '#00FF00');
             restartButton.setAttribute('scale', '1.8 1.8 1.8');
@@ -639,6 +744,7 @@
             }
             
             console.log(`Игра окончена! ${isWin ? 'Победа!' : 'Поражение!'} Счет: ${score}`);
+            console.log(`Студент: ${studentName}, ${studentGroup}`);
         }
 
         // Инициализация игры
@@ -654,8 +760,11 @@
                 // Убираем стандартное управление A-Frame
                 player.removeAttribute('wasd-controls');
                 
-                // Создаем объекты
+                // Создаем объекты для сбора с рандомизированными позициями
                 createCollectibles(totalObjects);
+                
+                // Создаем движущиеся объекты (препятствия)
+                createMovingObjects();
                 
                 // Создаем деревья для ориентира
                 createTrees();
@@ -710,12 +819,36 @@
                             instr.style.opacity = '1';
                         }
                     }
+                    
+                    // Тест системы частиц
+                    if (e.key === 'p' || e.key === 'P') {
+                        const explosion = document.getElementById('explosion');
+                        if (explosion) {
+                            explosion.setAttribute('visible', 'true');
+                            setTimeout(() => {
+                                explosion.setAttribute('visible', 'false');
+                            }, 500);
+                            console.log('Тест системы частиц активирован');
+                        }
+                    }
+                    
+                    // Тест звука сбора
+                    if (e.key === 't' || e.key === 'T') {
+                        const sound = document.getElementById('collectSound');
+                        if (sound && sound.components && sound.components.sound) {
+                            sound.components.sound.playSound();
+                            console.log('Тест звука сбора активирован');
+                        }
+                    }
                 });
                 
                 console.log('Игра запущена! Классическое FPS управление как в CS');
                 console.log('Управление: WASD - движение, мышь - обзор и стрельба');
                 console.log('H - хитбокс, R - перезапуск, I - инструкции, ESC - выход из захвата мыши');
+                console.log('P - тест частиц, T - тест звука сбора');
                 console.log('Объекты собираются автоматически при приближении или кликом мыши');
+                console.log('Добавлены: 1) Система частиц при сборе, 2) Кастомный звук сбора');
+                console.log('Добавлены: 3) Движущиеся объекты-препятствия, 4) Рандомизация позиций при каждом запуске');
                 
             }, 2000);
         });
@@ -756,7 +889,7 @@
             z-index: 1000;
             text-align: center;
             border: 2px solid #FFD700;
-            max-width: 450px;
+            max-width: 500px;
             backdrop-filter: blur(5px);
             box-shadow: 0 0 25px rgba(255, 215, 0, 0.4);
         }
@@ -835,11 +968,23 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        .student-info {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 1000;
+        }
     </style>
     
     <!-- Инструкции -->
     <div id="instructions">
-        <h3>🏆 СБОР ОБЪЕКТОВ - КЛАССИЧЕСКОЕ УПРАВЛЕНИЕ 🏆</h3>
+        <h3>🏆 СБОР ОБЪЕКТОВ - УЛУЧШЕННАЯ ВЕРСИЯ 🏆</h3>
         <div class="controls-grid">
             <div class="control-item">
                 <span>Вперед:</span>
@@ -870,10 +1015,26 @@
                 <span class="key">R</span>
             </div>
             <div class="control-item">
+                <span>Частицы:</span>
+                <span class="key">P</span>
+            </div>
+            <div class="control-item">
+                <span>Тест звука:</span>
+                <span class="key">T</span>
+            </div>
+            <div class="control-item">
                 <span>Инструкции:</span>
                 <span class="key">I</span>
             </div>
         </div>
+        <p class="tip">
+            <strong>🎯 ДОБАВЛЕННЫЕ ФУНКЦИОНАЛЬНОСТИ:</strong><br>
+            1. <strong>СИСТЕМА ЧАСТИЦ</strong> - золотой взрыв при сборе объектов<br>
+            2. <strong>КАСТОМНЫЙ ЗВУК</strong> - новый звук сбора монет<br>
+            3. <strong>ДВИЖУЩИЕСЯ ПРЕПЯТСТВИЯ</strong> - 5 красных конусов<br>
+            4. <strong>РАНДОМИЗАЦИЯ</strong> - позиции объектов меняются при каждом запуске<br>
+            5. <strong>ФИО СТУДЕНТА</strong> - отображается в конце игры
+        </p>
         <p class="tip">
             <strong>🎯 КЛАССИЧЕСКОЕ FPS УПРАВЛЕНИЕ (КАК В CS):</strong><br>
             • W - движение вперед (в направлении камеры)<br>
@@ -891,9 +1052,17 @@
         <p style="font-size: 12px; opacity: 0.7; margin-top: 15px;">
             Цвета объектов: золото (10 очков), серебро (5), бронза (3)<br>
             Нажмите H чтобы увидеть зону сбора вокруг игрока<br>
+            P - тест системы частиц, T - тест звука сбора<br>
             Деревья - ориентир границ игровой зоны<br>
             ESC - выход из режима захвата мыши
         </p>
+    </div>
+    
+    <!-- Информация о студенте -->
+    <div class="student-info">
+        Студент: Иванов Иван Иванович<br>
+        Группа: ПИ-21-1<br>
+        Практическая работа: VR игра с улучшениями
     </div>
     
     <div id="loading">
