@@ -2,9 +2,13 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>VR Игра: Сбор объектов</title>
+    <title>VR Игра: Сбор объектов - Соломенный Ю.Ю.</title>
     <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
     <script src="https://unpkg.com/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
+    <!-- Добавлен ассет для частиц -->
+    <script src="https://unpkg.com/aframe-particle-system-component@1.0.x/dist/aframe-particle-system-component.min.js"></script>
+    <!-- Добавлен ассет для звукового окружения -->
+    <script src="https://unpkg.com/aframe-sound-component@3.0.3/dist/aframe-sound-component.min.js"></script>
 </head>
 <body>
     <a-scene physics="gravity: -9.8; debug: false;">
@@ -13,13 +17,22 @@
             <!-- Звуки -->
             <audio id="collect-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/click.ogg"></audio>
             <audio id="game-over-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/percussion.ogg"></audio>
-            
+            <audio id="background-music" src="https://cdn.aframe.io/basic-guide/audio/backgroundnoise.wav"></audio>
             <!-- Текстура скайбокса -->
             <img id="sky-texture" src="sky.jpg" crossorigin="anonymous">
         </a-assets>
         
         <!-- Скайбокс -->
         <a-sky src="#sky-texture" radius="100"></a-sky>
+        
+        <!-- Фоновый звук -->
+        <a-sound src="#background-music" autoplay="true" loop="true" volume="0.3"></a-sound>
+        
+        <!-- Система частиц для взрыва (изначально скрыта) -->
+        <a-entity id="explosion" 
+                  particle-system="preset: explosion; color: yellow; enabled: false; particleCount: 50"
+                  position="0 0 -10">
+        </a-entity>
         
         <!-- Пол с физикой -->
         <a-plane 
@@ -117,6 +130,12 @@
         
         <!-- Декоративные деревья -->
         <a-entity id="trees"></a-entity>
+        
+        <!-- Контейнер для движущихся объектов -->
+        <a-entity id="moving-objects"></a-entity>
+        
+        <!-- Контейнер для собираемых объектов -->
+        <a-entity id="collectibles-container"></a-entity>
     </a-scene>
     
     <script>
@@ -129,126 +148,7 @@
         const totalObjects = 25;
         let objects = [];
         let cursorEnabled = true;
-        
-        // Классическое управление как в CS
-        const keys = {
-            w: false, a: false, s: false, d: false,
-            W: false, A: false, S: false, D: false,
-            ' ': false // пробел
-        };
-        
-        let velocity = { x: 0, z: 0 };
-        const acceleration = 0.3;
-        const maxSpeed = 0.25;
-        const friction = 0.9;
-
-        // Компонент для классического FPS управления
-        AFRAME.registerComponent('fps-controls', {
-            init: function() {
-                this.camera = this.el.querySelector('[camera]');
-                this.player = this.el;
-                
-                // Обработчики клавиш
-                document.addEventListener('keydown', (e) => {
-                    const key = e.key;
-                    if (keys.hasOwnProperty(key)) {
-                        keys[key] = true;
-                        e.preventDefault();
-                    }
-                });
-                
-                document.addEventListener('keyup', (e) => {
-                    const key = e.key;
-                    if (keys.hasOwnProperty(key)) {
-                        keys[key] = false;
-                        e.preventDefault();
-                    }
-                });
-                
-                // Захват мыши
-                this.el.addEventListener('click', () => {
-                    if (this.camera.components['look-controls']) {
-                        this.camera.components['look-controls'].pointerLockEnabled = true;
-                        const canvas = this.el.sceneEl.canvas;
-                        if (canvas) {
-                            canvas.requestPointerLock = canvas.requestPointerLock || 
-                                                       canvas.mozRequestPointerLock ||
-                                                       canvas.webkitRequestPointerLock;
-                            canvas.requestPointerLock();
-                        }
-                    }
-                });
-                
-                console.log('Классическое FPS управление включено (как в CS)');
-            },
-            
-            tick: function(time, delta) {
-                if (!gameActive) return;
-                
-                // Получаем вращение камеры
-                const cameraRotation = this.camera.getAttribute('rotation');
-                
-                // Вычисляем направление на основе нажатых клавиш
-                let moveForward = 0;
-                let moveRight = 0;
-                
-                // ИСПРАВЛЕНО: Поменял местами W и S
-                if (keys.w || keys.W) moveForward -= 1; // было += 1, теперь -= 1
-                if (keys.s || keys.S) moveForward += 1; // было -= 1, теперь += 1
-                if (keys.a || keys.A) moveRight -= 1;
-                if (keys.d || keys.D) moveRight += 1;
-                
-                // Нормализуем вектор направления
-                if (moveForward !== 0 && moveRight !== 0) {
-                    moveForward *= 0.7071; // 1/√2
-                    moveRight *= 0.7071;
-                }
-                
-                // Преобразуем локальное направление в мировые координаты
-                const angle = THREE.MathUtils.degToRad(cameraRotation.y);
-                
-                // Целевая скорость
-                let targetVelocityX = 0;
-                let targetVelocityZ = 0;
-                
-                if (moveForward !== 0 || moveRight !== 0) {
-                    targetVelocityX = (moveForward * Math.sin(angle) + moveRight * Math.cos(angle)) * maxSpeed;
-                    targetVelocityZ = (moveForward * Math.cos(angle) - moveRight * Math.sin(angle)) * maxSpeed;
-                }
-                
-                // Плавное ускорение
-                velocity.x += (targetVelocityX - velocity.x) * acceleration;
-                velocity.z += (targetVelocityZ - velocity.z) * acceleration;
-                
-                // Применяем трение
-                if (Math.abs(moveForward) < 0.1 && Math.abs(moveRight) < 0.1) {
-                    velocity.x *= friction;
-                    velocity.z *= friction;
-                    
-                    // Останавливаем полностью если скорость очень маленькая
-                    if (Math.abs(velocity.x) < 0.001) velocity.x = 0;
-                    if (Math.abs(velocity.z) < 0.001) velocity.z = 0;
-                }
-                
-                // Получаем текущую позицию
-                const currentPos = this.player.getAttribute('position');
-                
-                // Обновляем позицию
-                const newPos = {
-                    x: currentPos.x + velocity.x,
-                    y: currentPos.y,
-                    z: currentPos.z + velocity.z
-                };
-                
-                // Ограничиваем область движения
-                const maxDistance = 45;
-                newPos.x = Math.max(-maxDistance, Math.min(maxDistance, newPos.x));
-                newPos.z = Math.max(-maxDistance, Math.min(maxDistance, newPos.z));
-                
-                // Применяем новую позицию
-                this.player.setAttribute('position', newPos);
-            }
-        });
+        let movingObjects = [];
 
         // Компонент для сбора объектов мышкой
         AFRAME.registerComponent('collect-on-click', {
@@ -284,9 +184,11 @@
             }
         });
 
-        // Функция создания случайных объектов
+        // Функция создания случайных объектов с рандомизацией позиций
         function createCollectibles(count) {
-            const scene = document.querySelector('a-scene');
+            const container = document.getElementById('collectibles-container');
+            container.innerHTML = ''; // Очищаем контейнер
+            objects = []; // Очищаем массив объектов
             
             const colors = [
                 {color: '#FFD700', value: 10, name: 'золото'},
@@ -310,17 +212,13 @@
                 {type: 'icosahedron', radius: 0.5}
             ];
             
+            // Генерация случайных позиций
+            const positions = spawnObjects(count);
+            
             for (let i = 0; i < count; i++) {
-                // Случайная позиция
-                let x, z;
-                let attempts = 0;
-                
-                do {
-                    x = Math.random() * 80 - 40;
-                    z = Math.random() * 80 - 40;
-                    attempts++;
-                } while (Math.abs(x) < 3 && Math.abs(z) < 3 && attempts < 100);
-                
+                const position = positions[i];
+                const x = position.x;
+                const z = position.z;
                 const y = 0.5;
                 
                 // Случайный цвет и значение
@@ -380,17 +278,95 @@
                     distance: 3
                 });
                 
-                // Добавляем в сцену
-                scene.appendChild(element);
+                // Добавляем в контейнер
+                container.appendChild(element);
                 objects.push(element);
             }
             
             console.log(`Создано ${objects.length} объектов для сбора`);
         }
 
+        // Функция для генерации случайных позиций объектов
+        function spawnObjects(count) {
+            const positions = [];
+            for (let i = 0; i < count; i++) {
+                let x, z;
+                let attempts = 0;
+                
+                do {
+                    x = Math.random() * 80 - 40;
+                    z = Math.random() * 80 - 40;
+                    attempts++;
+                } while (Math.abs(x) < 3 && Math.abs(z) < 3 && attempts < 100);
+                
+                positions.push({x, y: 0.5, z});
+            }
+            return positions;
+        }
+
+        // Функция создания движущихся объектов
+        function createMovingObjects(count) {
+            const container = document.getElementById('moving-objects');
+            container.innerHTML = ''; // Очищаем контейнер
+            movingObjects = []; // Очищаем массив
+            
+            for (let i = 0; i < count; i++) {
+                const startX = Math.random() * 60 - 30;
+                const startZ = Math.random() * 60 - 30;
+                const endX = Math.random() * 60 - 30;
+                const endZ = Math.random() * 60 - 30;
+                
+                const movingObj = document.createElement('a-entity');
+                movingObj.setAttribute('id', `moving-obj-${i}`);
+                movingObj.setAttribute('class', 'moving-object');
+                movingObj.setAttribute('geometry', 'primitive: cone; radiusBottom: 0.5; height: 1.5');
+                movingObj.setAttribute('material', 'color: #FF4444');
+                movingObj.setAttribute('position', `${startX} 2 ${startZ}`);
+                movingObj.setAttribute('static-body', 'shape: box; mass: 0');
+                
+                // Анимация движения
+                movingObj.setAttribute('animation', {
+                    property: 'position',
+                    from: `${startX} 2 ${startZ}`,
+                    to: `${endX} 2 ${endZ}`,
+                    dur: 3000 + Math.random() * 4000,
+                    loop: true,
+                    dir: 'alternate',
+                    easing: 'easeInOutSine'
+                });
+                
+                // Вращение
+                movingObj.setAttribute('animation__rotate', {
+                    property: 'rotation',
+                    to: '0 360 0',
+                    dur: 2000,
+                    loop: true,
+                    easing: 'linear'
+                });
+                
+                container.appendChild(movingObj);
+                movingObjects.push(movingObj);
+            }
+            
+            console.log(`Создано ${movingObjects.length} движущихся объектов`);
+        }
+
+        // Функция активации эффекта частиц
+        function activateParticleEffect(position) {
+            const explosion = document.getElementById('explosion');
+            explosion.setAttribute('position', position);
+            explosion.setAttribute('particle-system', 'enabled: true');
+            
+            // Отключаем эффект через 1 секунду
+            setTimeout(() => {
+                explosion.setAttribute('particle-system', 'enabled: false');
+            }, 1000);
+        }
+
         // Создание деревьев для ориентира
         function createTrees() {
             const treesContainer = document.getElementById('trees');
+            treesContainer.innerHTML = ''; // Очищаем контейнер
             
             // Создаем деревья по кругу
             for (let i = 0; i < 20; i++) {
@@ -480,11 +456,15 @@
             updateScore();
             updateProgress();
             
-            // Воспроизводим звук
+            // Воспроизводим звук сбора
             const sound = document.getElementById('collect-sound');
             if (sound && sound.components && sound.components.sound) {
                 sound.components.sound.playSound();
             }
+            
+            // Активируем эффект частиц в позиции объекта
+            const objPos = object.getAttribute('position');
+            activateParticleEffect(objPos);
             
             // Эффект сбора
             object.setAttribute('animation__collect', {
@@ -613,7 +593,7 @@
             
             // Обработчик клика
             restartButton.addEventListener('click', function() {
-                location.reload();
+                resetGame();
             });
             
             // Обработчик наведения
@@ -641,24 +621,59 @@
             console.log(`Игра окончена! ${isWin ? 'Победа!' : 'Поражение!'} Счет: ${score}`);
         }
 
+        // Функция сброса игры
+        function resetGame() {
+            gameActive = true;
+            cursorEnabled = true;
+            score = 0;
+            timeLeft = 60;
+            collectedObjects = 0;
+            
+            // Очищаем сообщения
+            const messagesContainer = document.getElementById('game-messages');
+            messagesContainer.innerHTML = '';
+            
+            // Пересоздаем объекты с новыми случайными позициями
+            createCollectibles(totalObjects);
+            
+            // Пересоздаем движущиеся объекты
+            createMovingObjects(5);
+            
+            // Обновляем UI
+            updateScore();
+            updateTimer();
+            updateProgress();
+            
+            // Запускаем таймер
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (!gameActive) return;
+                
+                timeLeft--;
+                updateTimer();
+                
+                if (timeLeft <= 0) {
+                    endGame(false);
+                }
+            }, 1000);
+            
+            console.log('Игра перезапущена!');
+        }
+
         // Инициализация игры
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('Запуск игры...');
+            console.log('Запуск игры... Разработчик: Соломенный Ю.Ю.');
             
             // Даем время на загрузку
             setTimeout(() => {
-                // Добавляем компонент классического FPS управления
-                const player = document.getElementById('player');
-                player.setAttribute('fps-controls', '');
-                
-                // Убираем стандартное управление A-Frame
-                player.removeAttribute('wasd-controls');
-                
-                // Создаем объекты
-                createCollectibles(totalObjects);
-                
                 // Создаем деревья для ориентира
                 createTrees();
+                
+                // Создаем собираемые объекты с рандомизированными позициями
+                createCollectibles(totalObjects);
+                
+                // Создаем движущиеся объекты
+                createMovingObjects(5);
                 
                 // Инициализируем систему сбора
                 initAutoCollection();
@@ -692,7 +707,7 @@
                     
                     // Перезапуск игры
                     if (e.key === 'r' || e.key === 'R') {
-                        location.reload();
+                        resetGame();
                     }
                     
                     // Выход из захвата мыши
@@ -712,10 +727,12 @@
                     }
                 });
                 
-                console.log('Игра запущена! Классическое FPS управление как в CS');
-                console.log('Управление: WASD - движение, мышь - обзор и стрельба');
-                console.log('H - хитбокс, R - перезапуск, I - инструкции, ESC - выход из захвата мыши');
-                console.log('Объекты собираются автоматически при приближении или кликом мыши');
+                console.log('Игра запущена! Добавленный функционал:');
+                console.log('1. Система частиц при сборе объектов');
+                console.log('2. Движущиеся объекты с анимацией');
+                console.log('3. Рандомизация позиций объектов при перезапуске');
+                console.log('4. Фоновый звук с использованием ассета aframe-sound-component');
+                console.log('5. Использование ассета aframe-particle-system-component для эффектов');
                 
             }, 2000);
         });
@@ -839,7 +856,8 @@
     
     <!-- Инструкции -->
     <div id="instructions">
-        <h3>🏆 СБОР ОБЪЕКТОВ - КЛАССИЧЕСКОЕ УПРАВЛЕНИЕ 🏆</h3>
+        <h3>🏆 СБОР ОБЪЕКТОВ - ДОПОЛНЕННЫЙ ФУНКЦИОНАЛ 🏆</h3>
+        <p style="color: #FFD700; font-weight: bold;">Разработчик: Соломенный Ю.Ю.</p>
         <div class="controls-grid">
             <div class="control-item">
                 <span>Вперед:</span>
@@ -875,67 +893,20 @@
             </div>
         </div>
         <p class="tip">
-            <strong>🎯 КЛАССИЧЕСКОЕ FPS УПРАВЛЕНИЕ (КАК В CS):</strong><br>
-            • W - движение вперед (в направлении камеры)<br>
-            • S - движение назад (относительно камеры)<br>
-            • A/D - стрейф влево/вправо<br>
-            • Мышь - управление поворотом и стрельба<br>
-            • Кликните по экрану для захвата мыши
+            <strong>🎯 ДОБАВЛЕННЫЙ ФУНКЦИОНАЛ:</strong><br>
+            1. Эффект частиц при сборе объектов<br>
+            2. Движущиеся объекты (красные конусы)<br>
+            3. Рандомизация позиций при перезапуске<br>
+            4. Фоновый звук и улучшенные звуковые эффекты<br>
+            5. Использование ассетов A-Frame Registry
         </p>
         <p class="tip">
             <strong>🎯 ЦЕЛЬ:</strong> Соберите все 25 объектов за 60 секунд!<br>
-            <strong>2 СПОСОБА СБОРА:</strong><br>
-            1. Подойдите близко к объекту (автоматический сбор)<br>
-            2. Наведите курсор и кликните мышкой
+            <strong>СПОСОБЫ СБОРА:</strong><br>
+            • Подойдите близко к объекту (автоматический сбор)<br>
+            • Наведите курсор и кликните мышкой
         </p>
         <p style="font-size: 12px; opacity: 0.7; margin-top: 15px;">
             Цвета объектов: золото (10 очков), серебро (5), бронза (3)<br>
             Нажмите H чтобы увидеть зону сбора вокруг игрока<br>
-            Деревья - ориентир границ игровой зоны<br>
-            ESC - выход из режима захвата мыши
-        </p>
-    </div>
-    
-    <div id="loading">
-        <div class="loading-spinner"></div>
-        Загрузка игры...
-    </div>
-    
-    <script>
-        // Скрываем загрузку и показываем инструкции
-        window.addEventListener('load', function() {
-            setTimeout(() => {
-                const loading = document.getElementById('loading');
-                const instructions = document.getElementById('instructions');
-                
-                loading.style.display = 'none';
-                instructions.style.display = 'block';
-                
-                // Автоскрытие инструкций через 10 секунд
-                setTimeout(() => {
-                    instructions.style.opacity = '0.7';
-                    instructions.style.transition = 'opacity 2s';
-                }, 8000);
-                
-                setTimeout(() => {
-                    instructions.style.display = 'none';
-                }, 15000);
-                
-                // Показать/скрыть инструкции по клику
-                instructions.addEventListener('click', function() {
-                    this.style.display = 'none';
-                });
-                
-                // Захват мыши при клике на сцену
-                document.querySelector('a-scene').addEventListener('click', function() {
-                    const canvas = this.canvas;
-                    if (canvas && canvas.requestPointerLock) {
-                        canvas.requestPointerLock();
-                    }
-                });
-                
-            }, 2000);
-        });
-    </script>
-</body>
-</html>
+            R - пере
