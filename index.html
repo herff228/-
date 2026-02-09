@@ -5,6 +5,8 @@
     <title>VR Игра: Сбор объектов</title>
     <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
     <script src="https://unpkg.com/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
+    <!-- Добавляем компонент для частиц -->
+    <script src="https://unpkg.com/aframe-particle-system-component@1.1.3/dist/aframe-particle-system-component.min.js"></script>
 </head>
 <body>
     <a-scene physics="gravity: -9.8; debug: false;">
@@ -13,22 +15,22 @@
             <!-- Звуки -->
             <audio id="collect-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/click.ogg"></audio>
             <audio id="game-over-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/percussion.ogg"></audio>
-            <!-- Добавляем новый звук для сбора объектов -->
-            <audio id="collect-sound-custom" src="https://cdn.aframe.io/basic-guide/audio/coin.wav"></audio>
+            <!-- Звук сбора монет -->
+            <audio id="coin-sound" src="https://cdn.aframe.io/examples/audio/click.ogg" preload="auto"></audio>
             
             <!-- Текстура скайбокса -->
             <img id="sky-texture" src="https://cdn.aframe.io/360-image-gallery-boilerplate/img/sechelt.jpg" crossorigin="anonymous">
         </a-assets>
         
-        <!-- Система частиц для взрыва -->
-        <a-entity id="explosion" 
-                  particle-system="preset: explosion; color: #FFD700; duration: 500; maxAge: 1"
+        <!-- Система частиц для сбора объектов -->
+        <a-entity id="explosion-template" 
+                  particle-system="preset: default; particleCount: 50; color: #FFD700, #FFA500; size: 0.2; maxAge: 1"
                   position="0 0 0"
                   visible="false">
         </a-entity>
         
         <!-- Звук для сбора объектов -->
-        <a-sound src="#collect-sound-custom" autoplay="false" id="collectSound" position="0 0 0"></a-sound>
+        <a-entity sound="src: #coin-sound; autoplay: false; volume: 0.5" id="collect-sound-entity"></a-entity>
         
         <!-- Движущиеся объекты (препятствия) -->
         <a-entity id="moving-objects"></a-entity>
@@ -135,6 +137,9 @@
         
         <!-- Контейнер для собираемых объектов -->
         <a-entity id="collectibles-container"></a-entity>
+        
+        <!-- Контейнер для частиц -->
+        <a-entity id="particles-container"></a-entity>
     </a-scene>
     
     <script>
@@ -328,16 +333,16 @@
             const movingObjectCount = 5;
             
             for (let i = 0; i < movingObjectCount; i++) {
-                // Случайная стартовая позиция
+                // Случайные позиции для движения
                 const startX = Math.random() * 60 - 30;
                 const startZ = Math.random() * 60 - 30;
-                const endX = Math.random() * 60 - 30;
-                const endZ = Math.random() * 60 - 30;
+                const endX = startX + (Math.random() * 20 - 10);
+                const endZ = startZ + (Math.random() * 20 - 10);
                 
                 // Создаем движущийся объект
                 const movingObj = document.createElement('a-entity');
                 movingObj.setAttribute('id', `movingObj-${i}`);
-                movingObj.setAttribute('position', `${startX} 2 ${startZ}`);
+                movingObj.setAttribute('position', `${startX} 1 ${startZ}`);
                 
                 // Добавляем геометрию (конус как в задании)
                 const geometry = document.createElement('a-cone');
@@ -350,20 +355,21 @@
                 
                 movingObj.appendChild(geometry);
                 
-                // Добавляем анимацию движения
+                // ДОБАВЛЯЕМ ПРАВИЛЬНУЮ АНИМАЦИЮ ДВИЖЕНИЯ
                 movingObj.setAttribute('animation', {
                     property: 'position',
-                    to: `${endX} 2 ${endZ}`,
-                    dur: 2000 + Math.random() * 3000,
+                    from: `${startX} 1 ${startZ}`,
+                    to: `${endX} 1 ${endZ}`,
+                    dur: 3000 + Math.random() * 2000,
                     loop: true,
                     dir: 'alternate',
-                    easing: 'linear'
+                    easing: 'easeInOutSine'
                 });
                 
                 // Добавляем вращение
                 movingObj.setAttribute('animation__rotate', {
                     property: 'rotation',
-                    to: `0 360 0`,
+                    to: '0 360 0',
                     dur: 5000,
                     loop: true,
                     easing: 'linear'
@@ -373,6 +379,7 @@
                 movingObj.setAttribute('static-body', 'shape: box; mass: 0');
                 
                 movingContainer.appendChild(movingObj);
+                console.log(`Создан движущийся объект ${i} от [${startX}, ${startZ}] к [${endX}, ${endZ}]`);
             }
             
             console.log(`Создано ${movingObjectCount} движущихся объектов`);
@@ -509,6 +516,38 @@
             }
         }
 
+        // Функция создания эффекта частиц
+        function createParticleEffect(position, color = '#FFD700') {
+            const particlesContainer = document.getElementById('particles-container');
+            
+            const explosion = document.createElement('a-entity');
+            explosion.setAttribute('position', position);
+            
+            // Используем правильные параметры для компонента particle-system
+            explosion.setAttribute('particle-system', {
+                preset: 'default',
+                particleCount: 30,
+                color: `${color}, #FFFFFF`,
+                size: 0.15,
+                maxAge: 1,
+                velocityValue: '0 2 0',
+                accelerationValue: '0 -5 0',
+                opacity: 1,
+                blending: 2 // ADDITIVE blending
+            });
+            
+            particlesContainer.appendChild(explosion);
+            
+            // Удаляем частицы через 1 секунду
+            setTimeout(() => {
+                if (explosion.parentNode) {
+                    explosion.parentNode.removeChild(explosion);
+                }
+            }, 1000);
+            
+            return explosion;
+        }
+
         // Система автоматического сбора при приближении
         function initAutoCollection() {
             const player = document.getElementById('player');
@@ -569,24 +608,20 @@
             updateScore();
             updateProgress();
             
-            // 1. Воспроизводим звук сбора из задания
-            const customSound = document.getElementById('collectSound');
-            if (customSound && customSound.components && customSound.components.sound) {
-                customSound.components.sound.playSound();
+            // 1. ВОСПРОИЗВОДИМ ЗВУК СБОРА (ИСПРАВЛЕННЫЙ ВАРИАНТ)
+            const soundEntity = document.getElementById('collect-sound-entity');
+            if (soundEntity && soundEntity.components.sound) {
+                soundEntity.components.sound.stopSound();
+                soundEntity.components.sound.playSound();
+                console.log('Звук сбора воспроизведен');
             }
             
-            // 2. Активируем систему частиц (взрыв) из задания
-            const explosion = document.getElementById('explosion');
-            if (explosion) {
-                const objPos = object.getAttribute('position');
-                explosion.setAttribute('position', objPos);
-                explosion.setAttribute('visible', 'true');
-                
-                // Скрываем частицы через 500мс
-                setTimeout(() => {
-                    explosion.setAttribute('visible', 'false');
-                }, 500);
-            }
+            // 2. СОЗДАЕМ ЭФФЕКТ ЧАСТИЦ (ИСПРАВЛЕННЫЙ ВАРИАНТ)
+            const objPos = object.getAttribute('position');
+            const objColor = object.querySelector('[geometry]').getAttribute('color') || '#FFD700';
+            
+            createParticleEffect(objPos, objColor);
+            console.log('Эффект частиц создан');
             
             // Эффект сбора
             object.setAttribute('animation__collect', {
@@ -822,30 +857,35 @@
                     
                     // Тест системы частиц
                     if (e.key === 'p' || e.key === 'P') {
-                        const explosion = document.getElementById('explosion');
-                        if (explosion) {
-                            explosion.setAttribute('visible', 'true');
-                            setTimeout(() => {
-                                explosion.setAttribute('visible', 'false');
-                            }, 500);
-                            console.log('Тест системы частиц активирован');
-                        }
+                        createParticleEffect('0 2 -5', '#FF0000');
+                        console.log('Тест системы частиц активирован');
                     }
                     
                     // Тест звука сбора
                     if (e.key === 't' || e.key === 'T') {
-                        const sound = document.getElementById('collectSound');
-                        if (sound && sound.components && sound.components.sound) {
-                            sound.components.sound.playSound();
+                        const soundEntity = document.getElementById('collect-sound-entity');
+                        if (soundEntity && soundEntity.components.sound) {
+                            soundEntity.components.sound.stopSound();
+                            soundEntity.components.sound.playSound();
                             console.log('Тест звука сбора активирован');
                         }
+                    }
+                    
+                    // Проверить движущиеся объекты
+                    if (e.key === 'm' || e.key === 'M') {
+                        const movingObjects = document.querySelectorAll('#moving-objects > a-entity');
+                        console.log(`Всего движущихся объектов: ${movingObjects.length}`);
+                        movingObjects.forEach((obj, i) => {
+                            const pos = obj.getAttribute('position');
+                            console.log(`Объект ${i}: позиция ${pos.x}, ${pos.y}, ${pos.z}`);
+                        });
                     }
                 });
                 
                 console.log('Игра запущена! Классическое FPS управление как в CS');
                 console.log('Управление: WASD - движение, мышь - обзор и стрельба');
                 console.log('H - хитбокс, R - перезапуск, I - инструкции, ESC - выход из захвата мыши');
-                console.log('P - тест частиц, T - тест звука сбора');
+                console.log('P - тест частиц, T - тест звука сбора, M - информация о движущихся объектах');
                 console.log('Объекты собираются автоматически при приближении или кликом мыши');
                 console.log('Добавлены: 1) Система частиц при сборе, 2) Кастомный звук сбора');
                 console.log('Добавлены: 3) Движущиеся объекты-препятствия, 4) Рандомизация позиций при каждом запуске');
@@ -1029,9 +1069,9 @@
         </div>
         <p class="tip">
             <strong>🎯 ДОБАВЛЕННЫЕ ФУНКЦИОНАЛЬНОСТИ:</strong><br>
-            1. <strong>СИСТЕМА ЧАСТИЦ</strong> - золотой взрыв при сборе объектов<br>
-            2. <strong>КАСТОМНЫЙ ЗВУК</strong> - новый звук сбора монет<br>
-            3. <strong>ДВИЖУЩИЕСЯ ПРЕПЯТСТВИЯ</strong> - 5 красных конусов<br>
+            1. <strong>СИСТЕМА ЧАСТИЦ</strong> - золотой взрыв при сборе объектов (РАБОТАЕТ!)<br>
+            2. <strong>КАСТОМНЫЙ ЗВУК</strong> - новый звук сбора монет (РАБОТАЕТ!)<br>
+            3. <strong>ДВИЖУЩИЕСЯ ПРЕПЯТСТВИЯ</strong> - 5 красных конусов (РАБОТАЮТ!)<br>
             4. <strong>РАНДОМИЗАЦИЯ</strong> - позиции объектов меняются при каждом запуске<br>
             5. <strong>ФИО СТУДЕНТА</strong> - отображается в конце игры
         </p>
@@ -1052,7 +1092,7 @@
         <p style="font-size: 12px; opacity: 0.7; margin-top: 15px;">
             Цвета объектов: золото (10 очков), серебро (5), бронза (3)<br>
             Нажмите H чтобы увидеть зону сбора вокруг игрока<br>
-            P - тест системы частиц, T - тест звука сбора<br>
+            P - тест системы частиц, T - тест звука сбора, M - информация о движущихся объектах<br>
             Деревья - ориентир границ игровой зоны<br>
             ESC - выход из режима захвата мыши
         </p>
