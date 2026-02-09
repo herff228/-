@@ -41,49 +41,40 @@
         <a-box static-body position="-25 2.5 0" width="0.5" height="5" depth="50" color="#8B4513"></a-box>
         <a-box static-body position="25 2.5 0" width="0.5" height="5" depth="50" color="#8B4513"></a-box>
         
-        <!-- Игрок -->
+        <!-- Игрок (кинематическое тело для плавного движения) -->
         <a-entity id="player" 
-                  position="0 3 5"
-                  kinematic-body="radius: 1.2; height: 1.8">
-            <!-- Основной хитбокс для физики -->
-            <a-entity id="player-hitbox"
-                      position="0 0.9 0"
-                      geometry="primitive: cylinder; radius: 1.2; height: 1.8"
-                      material="visible: false; transparent: true; opacity: 0"
-                      static-body="shape: cylinder; mass: 0"
-                      collision-filter="group: player">
-            </a-entity>
+                  position="0 1.6 5"
+                  kinematic-body
+                  wasd-controls="acceleration: 60; fly: false; easing: 10">
             
-            <!-- Камера (прикреплена к хитбоксу) -->
-            <a-entity camera
-                      position="0 1.6 0"
-                      look-controls="pointerLockEnabled: true"
-                      cursor="rayOrigin: mouse">
-                <a-cursor 
-                    id="cursor"
-                    color="#FF0000"
-                    animation__click="property: scale; startEvents: click; from: 0.1 0.1 0.1; to: 1 1 1; dur: 150"
-                ></a-cursor>
-            </a-entity>
-            
-            <!-- Управление движением (привязано к хитбоксу) -->
-            <a-entity wasd-controls="acceleration: 80; fly: false; easing: 15"
+            <!-- Камера прикреплена к игроку -->
+            <a-entity id="camera-rig"
                       position="0 0 0">
+                <a-entity camera
+                          position="0 1.6 0"
+                          look-controls="pointerLockEnabled: true"
+                          cursor="rayOrigin: mouse">
+                    <a-cursor 
+                        id="cursor"
+                        color="#FF0000"
+                        animation__click="property: scale; startEvents: click; from: 0.1 0.1 0.1; to: 1 1 1; dur: 150"
+                    ></a-cursor>
+                </a-entity>
             </a-entity>
             
-            <!-- Визуальный хитбокс для отладки -->
-            <a-cylinder 
-                id="visual-hitbox"
-                position="0 0.9 0"
-                radius="1.2"
-                height="1.8"
-                material="color: #FF0000; opacity: 0.2; transparent: true; visible: false"
-                segments-radial="16"
-            ></a-cylinder>
+            <!-- Хитбокс для сбора объектов -->
+            <a-sphere id="hitbox"
+                      position="0 0 0"
+                      radius="1.5"
+                      material="color: #FF0000; opacity: 0.3; transparent: true; visible: false"
+                      static-body="shape: sphere; mass: 0">
+            </a-sphere>
             
-            <!-- Визуальное представление игрока (ноги) -->
-            <a-box position="-0.3 0 0.2" width="0.3" height="0.6" depth="0.3" color="#333333" shadow></a-box>
-            <a-box position="0.3 0 0.2" width="0.3" height="0.6" depth="0.3" color="#333333" shadow></a-box>
+            <!-- Визуальное представление игрока -->
+            <a-entity position="0 -1.6 0">
+                <a-box position="-0.3 0 0.2" width="0.3" height="1.6" depth="0.3" color="#333333"></a-box>
+                <a-box position="0.3 0 0.2" width="0.3" height="1.6" depth="0.3" color="#333333"></a-box>
+            </a-entity>
         </a-entity>
         
         <!-- UI: Счет -->
@@ -125,19 +116,6 @@
             ></a-text>
         </a-entity>
         
-        <!-- UI: Отладка столкновений -->
-        <a-entity position="2 2 -1.5">
-            <a-text 
-                id="debug-text" 
-                value="Столкн.: 0" 
-                position="0 0 0" 
-                color="#00FF00" 
-                align="left"
-                scale="1 1 1"
-                font="mozillavr"
-            ></a-text>
-        </a-entity>
-        
         <!-- UI: Сообщения -->
         <a-entity id="game-messages" position="0 0 -1.5"></a-entity>
         
@@ -156,7 +134,40 @@
         let collectedObjects = 0;
         const totalObjects = 25;
         let objects = [];
-        let collisionCount = 0;
+        let cursorEnabled = true;
+
+        // Компонент для сбора объектов мышкой
+        AFRAME.registerComponent('collect-on-click', {
+            init: function() {
+                this.el.addEventListener('click', (evt) => {
+                    if (!gameActive) return;
+                    
+                    const object = this.el;
+                    if (!object.hasAttribute('data-collected')) {
+                        collectObject(object);
+                    }
+                });
+                
+                // Также собираем при наведении курсора на близком расстоянии
+                this.el.addEventListener('mouseenter', (evt) => {
+                    if (!cursorEnabled) return;
+                    
+                    const cursor = document.getElementById('cursor');
+                    if (cursor) {
+                        cursor.setAttribute('color', '#00FF00');
+                    }
+                });
+                
+                this.el.addEventListener('mouseleave', (evt) => {
+                    if (!cursorEnabled) return;
+                    
+                    const cursor = document.getElementById('cursor');
+                    if (cursor) {
+                        cursor.setAttribute('color', '#FF0000');
+                    }
+                });
+            }
+        });
 
         // Функция создания случайных объектов
         function createCollectibles(count) {
@@ -203,14 +214,14 @@
                 // Случайная форма
                 const shape = shapes[Math.floor(Math.random() * shapes.length)];
                 
-                // Создаем элемент
+                // Создаем основной элемент
                 const element = document.createElement('a-entity');
-                element.setAttribute('class', 'collectible');
+                element.setAttribute('class', 'collectible clickable');
                 element.setAttribute('id', `obj-${i}`);
                 element.setAttribute('position', `${x} ${y} ${z}`);
                 element.setAttribute('data-value', colorData.value);
+                element.setAttribute('collect-on-click', '');
                 element.setAttribute('static-body', 'shape: box; mass: 0');
-                element.setAttribute('collision-filter', 'group: collectible');
                 
                 // Добавляем геометрию
                 const geometry = document.createElement(`a-${shape.type}`);
@@ -262,12 +273,13 @@
             console.log(`Создано ${objects.length} объектов для сбора`);
         }
 
-        // Система обнаружения столкновений
-        function initCollisionSystem() {
-            const playerHitbox = document.getElementById('player-hitbox');
+        // Система автоматического сбора при приближении
+        function initAutoCollection() {
+            const player = document.getElementById('player');
+            const hitbox = document.getElementById('hitbox');
             
             // Обработчик физических столкновений
-            playerHitbox.addEventListener('collide', function(e) {
+            hitbox.addEventListener('collide', function(e) {
                 if (!gameActive) return;
                 
                 const other = e.detail.body.el;
@@ -277,11 +289,10 @@
                 }
             });
             
-            // Дополнительная проверка по расстоянию (на всякий случай)
+            // Дополнительная проверка по расстоянию
             setInterval(() => {
                 if (!gameActive) return;
                 
-                const player = document.getElementById('player');
                 const playerPos = player.getAttribute('position');
                 
                 objects.forEach((obj, index) => {
@@ -294,8 +305,8 @@
                         Math.pow(playerPos.z - objPos.z, 2)
                     );
                     
-                    // Если объект очень близко
-                    if (distance < 1.5) {
+                    // Если объект очень близко (автосбор)
+                    if (distance < 1.8) {
                         collectObject(obj);
                     }
                 });
@@ -310,10 +321,6 @@
             
             // Помечаем как собранный
             object.setAttribute('data-collected', 'true');
-            collisionCount++;
-            
-            // Обновляем счетчик столкновений
-            document.getElementById('debug-text').setAttribute('value', `Столкн.: ${collisionCount}`);
             
             // Получаем значение объекта
             const value = parseInt(object.getAttribute('data-value') || 1);
@@ -328,7 +335,7 @@
             
             // Воспроизводим звук
             const sound = document.getElementById('collect-sound');
-            if (sound) {
+            if (sound && sound.components && sound.components.sound) {
                 sound.components.sound.playSound();
             }
             
@@ -341,11 +348,14 @@
                 easing: 'easeOutCubic'
             });
             
-            // Убираем свет
+            // Убираем свечение
             object.removeAttribute('light');
             
             // Удаляем физическое тело
             object.removeAttribute('static-body');
+            
+            // Удаляем компонент клика
+            object.removeAttribute('collect-on-click');
             
             // Удаляем объект через 300мс
             setTimeout(() => {
@@ -423,12 +433,7 @@
             
             gameActive = false;
             clearInterval(timerInterval);
-            
-            // Убираем курсор
-            const cursor = document.getElementById('cursor');
-            if (cursor) {
-                cursor.setAttribute('visible', 'false');
-            }
+            cursorEnabled = false;
             
             // Сообщение о завершении
             const message = isWin 
@@ -477,7 +482,7 @@
             
             // Звук завершения
             const sound = document.getElementById('game-over-sound');
-            if (sound) {
+            if (sound && sound.components && sound.components.sound) {
                 sound.components.sound.playSound();
             }
             
@@ -488,13 +493,13 @@
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Запуск игры...');
             
-            // Даем время на загрузку физики
+            // Даем время на загрузку
             setTimeout(() => {
                 // Создаем объекты
                 createCollectibles(totalObjects);
                 
-                // Инициализируем систему столкновений
-                initCollisionSystem();
+                // Инициализируем систему сбора
+                initAutoCollection();
                 
                 // Обновляем UI
                 updateScore();
@@ -513,21 +518,37 @@
                     }
                 }, 1000);
                 
-                // Включаем видимость хитбокса при нажатии H (для отладки)
+                // Управление клавишами
                 document.addEventListener('keydown', function(e) {
+                    // Показать/скрыть хитбокс
                     if (e.key === 'h' || e.key === 'H') {
-                        const visualHitbox = document.getElementById('visual-hitbox');
-                        const isVisible = visualHitbox.getAttribute('material').visible;
-                        visualHitbox.setAttribute('material', 'visible', !isVisible);
-                        console.log(`Визуальный хитбокс ${!isVisible ? 'видим' : 'скрыт'}`);
+                        const hitbox = document.getElementById('hitbox');
+                        const isVisible = hitbox.getAttribute('material').visible;
+                        hitbox.setAttribute('material', 'visible', !isVisible);
+                        console.log(`Хитбокс ${!isVisible ? 'видим' : 'скрыт'}`);
                     }
+                    
+                    // Перезапуск игры
                     if (e.key === 'r' || e.key === 'R') {
                         location.reload();
                     }
+                    
+                    // Переключение режима сбора
+                    if (e.key === 'c' || e.key === 'C') {
+                        cursorEnabled = !cursorEnabled;
+                        const cursor = document.getElementById('cursor');
+                        if (cursor) {
+                            cursor.setAttribute('visible', cursorEnabled);
+                        }
+                        console.log(`Режим сбора мышкой: ${cursorEnabled ? 'ВКЛ' : 'ВЫКЛ'}`);
+                    }
                 });
                 
-                console.log('Игра запущена! Двигайтесь к объектам чтобы собрать их.');
-                console.log('Нажмите H для показа/скрытия визуального хитбокса');
+                console.log('Игра запущена!');
+                console.log('Управление: WASD - движение, мышь - обзор и клик по объектам');
+                console.log('H - показать/скрыть хитбокс, R - перезапуск, C - мышь вкл/выкл');
+                console.log('Объекты собираются автоматически при приближении или кликом мыши');
+                
             }, 2000);
         });
     </script>
@@ -672,17 +693,23 @@
                 <span class="key">МЫШЬ</span>
             </div>
             <div class="control-item">
+                <span>Хитбокс:</span>
+                <span class="key">H</span>
+            </div>
+            <div class="control-item">
                 <span>Перезапуск:</span>
                 <span class="key">R</span>
             </div>
             <div class="control-item">
-                <span>Хитбокс:</span>
-                <span class="key">H</span>
+                <span>Мышь вкл/выкл:</span>
+                <span class="key">C</span>
             </div>
         </div>
         <p class="tip">
             <strong>🎯 ЦЕЛЬ:</strong> Соберите все 25 объектов за 60 секунд!<br>
-            Просто наступайте на объекты - они автоматически соберутся.
+            <strong>2 СПОСОБА СБОРА:</strong><br>
+            1. Подойдите близко к объекту (автоматический сбор)<br>
+            2. Наведите курсор и кликните мышкой
         </p>
         <p style="font-size: 12px; opacity: 0.7; margin-top: 15px;">
             Цвета объектов: золото (10 очков), серебро (5), бронза (3)<br>
@@ -707,13 +734,13 @@
                 
                 // Автоскрытие инструкций
                 setTimeout(() => {
-                    instructions.style.opacity = '0.9';
+                    instructions.style.opacity = '0.7';
                     instructions.style.transition = 'opacity 2s';
                 }, 8000);
                 
                 setTimeout(() => {
                     instructions.style.display = 'none';
-                }, 12000);
+                }, 15000);
                 
                 // Показать/скрыть инструкции по клику
                 instructions.addEventListener('click', function() {
