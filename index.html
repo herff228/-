@@ -15,7 +15,7 @@
             <audio id="game-over-sound" src="https://cdn.aframe.io/360-image-gallery-boilerplate/audio/percussion.ogg"></audio>
             
             <!-- Текстура скайбокса -->
-            <img id="sky-texture" src="sky.jpg" crossorigin="anonymous">
+            <img id="sky-texture" src="https://cdn.aframe.io/360-image-gallery-boilerplate/img/city.jpg" crossorigin="anonymous">
         </a-assets>
         
         <!-- Скайбокс -->
@@ -138,7 +138,7 @@
         };
         const moveSpeed = 0.15;
 
-        // Компонент для простого движения относительно камеры
+        // Компонент для правильного движения относительно камеры
         AFRAME.registerComponent('simple-movement', {
             init: function() {
                 this.camera = this.el.querySelector('[camera]');
@@ -174,32 +174,40 @@
                     return; // Ничего не нажато - не двигаемся
                 }
                 
-                // Получаем вращение камеры (только по Y - горизонтальный поворот)
-                const cameraRotation = this.camera.getAttribute('rotation');
-                const angle = THREE.MathUtils.degToRad(cameraRotation.y);
+                // Получаем вращение камеры в радианах
+                const cameraRotation = this.camera.object3D.rotation;
+                const yaw = cameraRotation.y; // Y-вращение (влево/вправо)
                 
                 // Направление движения
                 let moveX = 0;
                 let moveZ = 0;
                 
+                // Вычисляем направление взгляда
+                const forwardX = Math.sin(yaw);
+                const forwardZ = -Math.cos(yaw); // Ось Z направлена в экран
+                
+                // Вычисляем правое направление (перпендикулярно forward)
+                const rightX = Math.cos(yaw);
+                const rightZ = Math.sin(yaw);
+                
                 // W/S - вперед/назад относительно направления камеры
                 if (moveForward) {
-                    moveX += Math.sin(angle) * moveSpeed;
-                    moveZ -= Math.cos(angle) * moveSpeed; // Минус потому что в A-Frame ось Z направлена от камеры
+                    moveX += forwardX * moveSpeed;
+                    moveZ += forwardZ * moveSpeed;
                 }
                 if (moveBackward) {
-                    moveX -= Math.sin(angle) * moveSpeed;
-                    moveZ += Math.cos(angle) * moveSpeed;
+                    moveX -= forwardX * moveSpeed;
+                    moveZ -= forwardZ * moveSpeed;
                 }
                 
                 // A/D - влево/вправо относительно направления камеры
                 if (moveLeft) {
-                    moveX -= Math.cos(angle) * moveSpeed;
-                    moveZ -= Math.sin(angle) * moveSpeed;
+                    moveX -= rightX * moveSpeed;
+                    moveZ -= rightZ * moveSpeed;
                 }
                 if (moveRight) {
-                    moveX += Math.cos(angle) * moveSpeed;
-                    moveZ += Math.sin(angle) * moveSpeed;
+                    moveX += rightX * moveSpeed;
+                    moveZ += rightZ * moveSpeed;
                 }
                 
                 // Получаем текущую позицию игрока
@@ -677,7 +685,7 @@
                 });
                 
                 console.log('Игра запущена!');
-                console.log('Камера теперь влияет на движение:');
+                console.log('Камера теперь правильно влияет на движение:');
                 console.log('• W - вперед в направлении камеры');
                 console.log('• S - назад относительно камеры');
                 console.log('• A/D - стрейф влево/вправо');
