@@ -5,7 +5,6 @@
     <title>VR Игра: Сбор объектов</title>
     <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
     <script src="https://unpkg.com/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
-    <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
 </head>
 <body>
     <a-scene physics="gravity: -9.8; debug: false;">
@@ -36,37 +35,37 @@
             repeat="20 20"
         ></a-plane>
         
-        <!-- Игрок с камерой -->
+        <!-- Игрок с классическим управлением -->
         <a-entity id="player" 
                   position="0 1.6 5"
-                  kinematic-body>
+                  kinematic-body
+                  wasd-controls="acceleration: 120; fly: false; easing: 20">
             
-            <!-- Камера (главный элемент для поворота) -->
-            <a-entity id="camera-wrapper"
-                      position="0 0 0">
-                <a-entity camera
-                          position="0 0 0"
-                          look-controls="pointerLockEnabled: true"
-                          cursor="rayOrigin: mouse">
-                    <a-cursor 
-                        id="cursor"
-                        color="#FF0000"
-                        animation__click="property: scale; startEvents: click; from: 0.1 0.1 0.1; to: 1 1 1; dur: 150"
-                    ></a-cursor>
-                </a-entity>
+            <!-- Камера -->
+            <a-entity camera
+                      position="0 1.6 0"
+                      look-controls="pointerLockEnabled: true; reverseMouseDrag: false"
+                      cursor="rayOrigin: mouse">
+                <a-cursor 
+                    id="cursor"
+                    color="#FF0000"
+                    animation__click="property: scale; startEvents: click; from: 0.1 0.1 0.1; to: 1 1 1; dur: 150"
+                ></a-cursor>
             </a-entity>
             
             <!-- Хитбокс для сбора объектов -->
             <a-sphere id="hitbox"
-                      position="0 -0.5 0"
+                      position="0 0.8 0"
                       radius="1.2"
                       material="color: #FF0000; opacity: 0.3; transparent: true; visible: false"
                       static-body="shape: sphere; mass: 0">
             </a-sphere>
             
-            <!-- Визуальное представление игрока -->
-            <a-box position="-0.3 -1 0" width="0.3" height="1.6" depth="0.3" color="#333333"></a-box>
-            <a-box position="0.3 -1 0" width="0.3" height="1.6" depth="0.3" color="#333333"></a-box>
+            <!-- НЕВИДИМЫЕ "НОГИ" (только для физики) -->
+            <a-box position="-0.3 0.8 0" width="0.3" height="1.6" depth="0.3" 
+                   material="opacity: 0; transparent: true; visible: false"></a-box>
+            <a-box position="0.3 0.8 0" width="0.3" height="1.6" depth="0.3" 
+                   material="opacity: 0; transparent: true; visible: false"></a-box>
         </a-entity>
         
         <!-- UI: Счет -->
@@ -131,26 +130,30 @@
         let objects = [];
         let cursorEnabled = true;
         
-        // Переменные для управления
+        // Классическое управление как в CS
         const keys = {
             w: false, a: false, s: false, d: false,
-            W: false, A: false, S: false, D: false
+            W: false, A: false, S: false, D: false,
+            ' ': false // пробел
         };
-        const moveSpeed = 0.2;
-        let moveVector = {x: 0, z: 0};
+        
+        let velocity = { x: 0, z: 0 };
+        const acceleration = 0.3;
+        const maxSpeed = 0.25;
+        const friction = 0.9;
 
-        // Компонент для управления движением относительно камеры
-        AFRAME.registerComponent('camera-movement-controls', {
+        // Компонент для классического FPS управления
+        AFRAME.registerComponent('fps-controls', {
             init: function() {
-                this.camera = document.querySelector('[camera]');
-                this.player = document.getElementById('player');
+                this.camera = this.el.querySelector('[camera]');
+                this.player = this.el;
                 
                 // Обработчики клавиш
                 document.addEventListener('keydown', (e) => {
                     const key = e.key;
                     if (keys.hasOwnProperty(key)) {
                         keys[key] = true;
-                        this.updateMovement();
+                        e.preventDefault();
                     }
                 });
                 
@@ -158,80 +161,91 @@
                     const key = e.key;
                     if (keys.hasOwnProperty(key)) {
                         keys[key] = false;
-                        this.updateMovement();
+                        e.preventDefault();
                     }
                 });
                 
-                // Игровой цикл для движения
-                this.tick = this.tick.bind(this);
+                // Захват мыши
+                this.el.addEventListener('click', () => {
+                    if (this.camera.components['look-controls']) {
+                        this.camera.components['look-controls'].pointerLockEnabled = true;
+                        const canvas = this.el.sceneEl.canvas;
+                        if (canvas) {
+                            canvas.requestPointerLock = canvas.requestPointerLock || 
+                                                       canvas.mozRequestPointerLock ||
+                                                       canvas.webkitRequestPointerLock;
+                            canvas.requestPointerLock();
+                        }
+                    }
+                });
+                
+                console.log('Классическое FPS управление включено (как в CS)');
             },
             
-            tick: function() {
+            tick: function(time, delta) {
                 if (!gameActive) return;
                 
-                // Получаем направление камеры
+                // Получаем вращение камеры
                 const cameraRotation = this.camera.getAttribute('rotation');
                 
-                // Вычисляем направление движения на основе нажатых клавиш
-                let forward = 0;
-                let right = 0;
+                // Вычисляем направление на основе нажатых клавиш
+                let moveForward = 0;
+                let moveRight = 0;
                 
-                if (keys.w || keys.W) forward += 1;
-                if (keys.s || keys.S) forward -= 1;
-                if (keys.a || keys.A) right -= 1;
-                if (keys.d || keys.D) right += 1;
+                if (keys.w || keys.W) moveForward += 1;
+                if (keys.s || keys.S) moveForward -= 1;
+                if (keys.a || keys.A) moveRight -= 1;
+                if (keys.d || keys.D) moveRight += 1;
                 
-                // Нормализуем вектор, если двигаемся по диагонали
-                if (forward !== 0 && right !== 0) {
-                    const length = Math.sqrt(forward * forward + right * right);
-                    forward /= length;
-                    right /= length;
+                // Нормализуем вектор направления
+                if (moveForward !== 0 && moveRight !== 0) {
+                    moveForward *= 0.7071; // 1/√2
+                    moveRight *= 0.7071;
                 }
                 
                 // Преобразуем локальное направление в мировые координаты
-                if (forward !== 0 || right !== 0) {
-                    // Угол в радианах
-                    const angle = THREE.MathUtils.degToRad(cameraRotation.y);
-                    
-                    // Вычисляем вектор движения
-                    const moveX = (forward * Math.sin(angle) + right * Math.cos(angle)) * moveSpeed;
-                    const moveZ = (forward * Math.cos(angle) - right * Math.sin(angle)) * moveSpeed;
-                    
-                    // Получаем текущую позицию
-                    const currentPos = this.player.getAttribute('position');
-                    
-                    // Обновляем позицию
-                    const newPos = {
-                        x: currentPos.x + moveX,
-                        y: currentPos.y,
-                        z: currentPos.z + moveZ
-                    };
-                    
-                    // Ограничиваем область движения
-                    const maxDistance = 40;
-                    newPos.x = Math.max(-maxDistance, Math.min(maxDistance, newPos.x));
-                    newPos.z = Math.max(-maxDistance, Math.min(maxDistance, newPos.z));
-                    
-                    // Применяем новую позицию
-                    this.player.setAttribute('position', newPos);
-                }
-            },
-            
-            updateMovement: function() {
-                moveVector.x = 0;
-                moveVector.z = 0;
+                const angle = THREE.MathUtils.degToRad(cameraRotation.y);
                 
-                if (keys.w || keys.W) moveVector.z -= 1;
-                if (keys.s || keys.S) moveVector.z += 1;
-                if (keys.a || keys.A) moveVector.x -= 1;
-                if (keys.d || keys.D) moveVector.x += 1;
+                // Целевая скорость
+                let targetVelocityX = 0;
+                let targetVelocityZ = 0;
                 
-                // Нормализуем вектор
-                const length = Math.sqrt(moveVector.x * moveVector.x + moveVector.z * moveVector.z);
-                if (length > 0) {
-                    moveVector.x /= length;
-                    moveVector.z /= length;
+                if (moveForward !== 0 || moveRight !== 0) {
+                    targetVelocityX = (moveForward * Math.sin(angle) + moveRight * Math.cos(angle)) * maxSpeed;
+                    targetVelocityZ = (moveForward * Math.cos(angle) - moveRight * Math.sin(angle)) * maxSpeed;
                 }
+                
+                // Плавное ускорение
+                velocity.x += (targetVelocityX - velocity.x) * acceleration;
+                velocity.z += (targetVelocityZ - velocity.z) * acceleration;
+                
+                // Применяем трение
+                if (Math.abs(moveForward) < 0.1 && Math.abs(moveRight) < 0.1) {
+                    velocity.x *= friction;
+                    velocity.z *= friction;
+                    
+                    // Останавливаем полностью если скорость очень маленькая
+                    if (Math.abs(velocity.x) < 0.001) velocity.x = 0;
+                    if (Math.abs(velocity.z) < 0.001) velocity.z = 0;
+                }
+                
+                // Получаем текущую позицию
+                const currentPos = this.player.getAttribute('position');
+                
+                // Обновляем позицию
+                const newPos = {
+                    x: currentPos.x + velocity.x,
+                    y: currentPos.y,
+                    z: currentPos.z + velocity.z
+                };
+                
+                // Ограничиваем область движения
+                const maxDistance = 45;
+                newPos.x = Math.max(-maxDistance, Math.min(maxDistance, newPos.x));
+                newPos.z = Math.max(-maxDistance, Math.min(maxDistance, newPos.z));
+                
+                // Применяем новую позицию
+                this.player.setAttribute('position', newPos);
             }
         });
 
@@ -253,6 +267,7 @@
                     const cursor = document.getElementById('cursor');
                     if (cursor) {
                         cursor.setAttribute('color', '#00FF00');
+                        cursor.setAttribute('scale', '1.2 1.2 1.2');
                     }
                 });
                 
@@ -262,6 +277,7 @@
                     const cursor = document.getElementById('cursor');
                     if (cursor) {
                         cursor.setAttribute('color', '#FF0000');
+                        cursor.setAttribute('scale', '1 1 1');
                     }
                 });
             }
@@ -299,8 +315,8 @@
                 let attempts = 0;
                 
                 do {
-                    x = Math.random() * 60 - 30;
-                    z = Math.random() * 60 - 30;
+                    x = Math.random() * 80 - 40;
+                    z = Math.random() * 80 - 40;
                     attempts++;
                 } while (Math.abs(x) < 3 && Math.abs(z) < 3 && attempts < 100);
                 
@@ -376,9 +392,9 @@
             const treesContainer = document.getElementById('trees');
             
             // Создаем деревья по кругу
-            for (let i = 0; i < 16; i++) {
-                const angle = (i / 16) * Math.PI * 2;
-                const radius = 35;
+            for (let i = 0; i < 20; i++) {
+                const angle = (i / 20) * Math.PI * 2;
+                const radius = 42;
                 
                 const x = Math.sin(angle) * radius;
                 const z = Math.cos(angle) * radius;
@@ -565,6 +581,11 @@
             clearInterval(timerInterval);
             cursorEnabled = false;
             
+            // Выход из захвата мыши
+            if (document.exitPointerLock) {
+                document.exitPointerLock();
+            }
+            
             // Сообщение о завершении
             const message = isWin 
                 ? "ПОБЕДА! 🎉" 
@@ -625,9 +646,12 @@
             
             // Даем время на загрузку
             setTimeout(() => {
-                // Добавляем компонент управления движением
+                // Добавляем компонент классического FPS управления
                 const player = document.getElementById('player');
-                player.setAttribute('camera-movement-controls', '');
+                player.setAttribute('fps-controls', '');
+                
+                // Убираем стандартное управление A-Frame
+                player.removeAttribute('wasd-controls');
                 
                 // Создаем объекты
                 createCollectibles(totalObjects);
@@ -670,14 +694,11 @@
                         location.reload();
                     }
                     
-                    // Переключение режима сбора
-                    if (e.key === 'c' || e.key === 'C') {
-                        cursorEnabled = !cursorEnabled;
-                        const cursor = document.getElementById('cursor');
-                        if (cursor) {
-                            cursor.setAttribute('visible', cursorEnabled);
+                    // Выход из захвата мыши
+                    if (e.key === 'Escape') {
+                        if (document.exitPointerLock) {
+                            document.exitPointerLock();
                         }
-                        console.log(`Режим сбора мышкой: ${cursorEnabled ? 'ВКЛ' : 'ВЫКЛ'}`);
                     }
                     
                     // Показать инструкции
@@ -690,11 +711,9 @@
                     }
                 });
                 
-                console.log('Игра запущена!');
-                console.log('Управление: WASD - движение ОТНОСИТЕЛЬНО НАПРАВЛЕНИЯ КАМЕРЫ');
-                console.log('Мышь - обзор и клик по объектам');
-                console.log('H - показать/скрыть хитбокс, R - перезапуск, C - мышь вкл/выкл');
-                console.log('I - показать/скрыть инструкции');
+                console.log('Игра запущена! Классическое FPS управление как в CS');
+                console.log('Управление: WASD - движение, мышь - обзор и стрельба');
+                console.log('H - хитбокс, R - перезапуск, I - инструкции, ESC - выход из захвата мыши');
                 console.log('Объекты собираются автоматически при приближении или кликом мыши');
                 
             }, 2000);
@@ -710,6 +729,7 @@
             background: #000;
             width: 100vw;
             height: 100vh;
+            cursor: none;
         }
         
         a-scene {
@@ -818,7 +838,7 @@
     
     <!-- Инструкции -->
     <div id="instructions">
-        <h3>🏆 СБОР ОБЪЕКТОВ - ИНСТРУКЦИЯ 🏆</h3>
+        <h3>🏆 СБОР ОБЪЕКТОВ - КЛАССИЧЕСКОЕ УПРАВЛЕНИЕ 🏆</h3>
         <div class="controls-grid">
             <div class="control-item">
                 <span>Вперед:</span>
@@ -854,10 +874,11 @@
             </div>
         </div>
         <p class="tip">
-            <strong>🎯 НОВАЯ СИСТЕМА УПРАВЛЕНИЯ:</strong><br>
-            • Движение ОТНОСИТЕЛЬНО НАПРАВЛЕНИЯ КАМЕРЫ<br>
-            • Зажмите W и вращайте камерой мышью - будете двигаться куда смотрите<br>
-            • A/D - движение влево/вправо относительно направления взгляда
+            <strong>🎯 КЛАССИЧЕСКОЕ FPS УПРАВЛЕНИЕ (КАК В CS):</strong><br>
+            • W/S - движение вперед/назад относительно направления камеры<br>
+            • A/D - стрейф влево/вправо<br>
+            • Мышь - управление поворотом и стрельба<br>
+            • Кликните по экрану для захвата мыши
         </p>
         <p class="tip">
             <strong>🎯 ЦЕЛЬ:</strong> Соберите все 25 объектов за 60 секунд!<br>
@@ -868,7 +889,8 @@
         <p style="font-size: 12px; opacity: 0.7; margin-top: 15px;">
             Цвета объектов: золото (10 очков), серебро (5), бронза (3)<br>
             Нажмите H чтобы увидеть зону сбора вокруг игрока<br>
-            Деревья - ориентир границ игровой зоны
+            Деревья - ориентир границ игровой зоны<br>
+            ESC - выход из режима захвата мыши
         </p>
     </div>
     
@@ -900,6 +922,14 @@
                 // Показать/скрыть инструкции по клику
                 instructions.addEventListener('click', function() {
                     this.style.display = 'none';
+                });
+                
+                // Захват мыши при клике на сцену
+                document.querySelector('a-scene').addEventListener('click', function() {
+                    const canvas = this.canvas;
+                    if (canvas && canvas.requestPointerLock) {
+                        canvas.requestPointerLock();
+                    }
                 });
                 
             }, 2000);
