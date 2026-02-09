@@ -909,4 +909,51 @@
         <p style="font-size: 12px; opacity: 0.7; margin-top: 15px;">
             Цвета объектов: золото (10 очков), серебро (5), бронза (3)<br>
             Нажмите H чтобы увидеть зону сбора вокруг игрока<br>
-            R - пере
+            R - перезапуск игры с новыми случайными позициями<br>
+            ESC - выход из режима захвата мыши
+        </p>
+    </div>
+    
+    <div id="loading">
+        <div class="loading-spinner"></div>
+        Загрузка игры...
+    </div>
+    
+    <script>
+        // Скрываем загрузку и показываем инструкции
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                const loading = document.getElementById('loading');
+                const instructions = document.getElementById('instructions');
+                
+                loading.style.display = 'none';
+                instructions.style.display = 'block';
+                
+                // Автоскрытие инструкций через 10 секунд
+                setTimeout(() => {
+                    instructions.style.opacity = '0.7';
+                    instructions.style.transition = 'opacity 2s';
+                }, 8000);
+                
+                setTimeout(() => {
+                    instructions.style.display = 'none';
+                }, 15000);
+                
+                // Показать/скрыть инструкции по клику
+                instructions.addEventListener('click', function() {
+                    this.style.display = 'none';
+                });
+                
+                // Захват мыши при клике на сцену
+                document.querySelector('a-scene').addEventListener('click', function() {
+                    const canvas = this.canvas;
+                    if (canvas && canvas.requestPointerLock) {
+                        canvas.requestPointerLock();
+                    }
+                });
+                
+            }, 2000);
+        });
+    </script>
+</body>
+</html>
